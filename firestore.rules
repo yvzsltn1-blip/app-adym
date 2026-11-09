@@ -1,0 +1,64 @@
+rules_version = '2';
+// Nöbet Çizelgesi güvenlik kuralları
+// Roller:
+//  - Baş yönetici: meta/setup.adminUid. İlk kurulumda bir kez belirlenir, her şeye yetkilidir.
+//  - Yönetici: users/{uid}.role == 'admin'. Çizelge, personel, izin ve personel hesaplarını yönetir;
+//    yönetici hesaplarını yalnızca baş yönetici açar/değiştirir.
+//  - Personel: users/{uid}.role == 'user'. Kesinleşmiş çizelgeleri görür, kendi izin taleplerini oluşturur.
+service cloud.firestore {
+  match /databases/{db}/documents {
+    function signedIn() { return request.auth != null; }
+    function setupDoc() { return /databases/$(db)/documents/meta/setup; }
+    function userDoc(uid) { return /databases/$(db)/documents/users/$(uid); }
+    function isSuper() {
+      return signedIn() && exists(setupDoc()) && get(setupDoc()).data.adminUid == request.auth.uid;
+    }
+    function me() { return get(userDoc(request.auth.uid)).data; }
+    function isMember() {
+      return signedIn() && exists(userDoc(request.auth.uid)) && me().active == true;
+    }
+    function isAdmin() { return isSuper() || (isMember() && me().role == 'admin'); }
+    // Hedef hesap personel hesabı mı (mevcut kayıt ve yazılacak kayıt)?
+    function targetIsUser(uid) {
+      return !exists(userDoc(uid)) || get(userDoc(uid)).data.role == 'user';
+    }
+
+    match /meta/setup {
+      allow get: if true;
+      allow create: if signedIn() && !exists(setupDoc()) && request.resource.data.adminUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+    match /users/{uid} {
+      allow get: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      allow list: if isAdmin();
+      allow create, update: if isSuper()
+        || (isAdmin() && targetIsUser(uid) && request.resource.data.role == 'user');
+      allow delete: if isSuper() || (isAdmin() && targetIsUser(uid));
+    }
+    match /secrets/{uid} {
+      allow list: if isSuper();
+      allow get, write: if isSuper() || (isAdmin() && targetIsUser(uid));
+    }
+    match /app/{docId} {
+      allow read: if isAdmin() || isMember();
+      allow write: if isAdmin();
+    }
+    match /schedules/{ym} {
+      // Personel yalnızca kesinleşmiş çizelgeleri okur; taslaklar yöneticilere özeldir.
+      allow read: if isAdmin() || (isMember() && resource.data.status == 'final');
+      allow write: if isAdmin();
+    }
+    match /requests/{id} {
+      allow read: if isAdmin() || (isMember() && resource.data.uid == request.auth.uid);
+      allow create: if isMember()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow update: if isAdmin();
+      // Personel bekleyen talebini geri çekebilir.
+      allow delete: if isAdmin() || (isMember() && resource.data.uid == request.auth.uid && resource.data.status == 'pending');
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

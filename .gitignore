@@ -1,0 +1,25 @@
+# Firebase CLI önbelleği / dağıtım geçmişi
+.firebase/
+
+# Firebase yapılandırma dosyaları (yerel)
+.firebaserc.user
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+ui-debug.log
+
+# Node
+node_modules/
+npm-debug.log*
+
+# İşletim sistemi / editör
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Ortam değişkenleri ve gizli anahtarlar
+.env
+.env.*
+*.local

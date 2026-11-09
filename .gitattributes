@@ -1,0 +1,13 @@
+# Satır sonları: depolar arası tutarlılık için metin dosyalarını LF ile sakla,
+# Windows'ta çalışırken otomatik CRLF'e çevrilsin.
+* text=auto eol=lf
+
+# Windows toplu iş dosyaları CRLF olmalı
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# İkili dosyalar
+*.woff2 binary
+*.png binary
+*.jpg binary
+*.ico binary
