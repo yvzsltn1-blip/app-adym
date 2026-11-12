@@ -110,11 +110,10 @@ export async function drawSchedule(cfg, schedules, ym, scale = SCALE) {
       main.forEach(pst => E.dayList(sched, pst.id, d).forEach(id => bars.push({ name: E.fullName(E.person(cfg, id)), day: true })));
       extra.forEach(pst => E.dayList(sched, pst.id, d).forEach(id => bars.push({ name: E.fullName(E.person(cfg, id)), day: false })));
     }
-    const off = people.filter(p => p.active !== false && (p.posts || []).length && E.leaveOn(cfg, p.id, date)).map(p => p.name.split(/\s+/)[0]);
 
     const pad = 14, numSize = Math.min(62, Math.round(ch * 0.27));
     const nw = text(String(d + 1), x + pad, cy + pad + numSize * 0.42, { font: DISPLAY, size: numSize, weight: 700, spacing: -2, color: wk ? C.red : C.ink });
-    const note = (hol ? hol.name : '') + (hol && off.length ? ' · ' : '') + (off.length ? 'İzinli: ' + off.join(', ') : '');
+    const note = hol ? hol.name : '';
     if (note) text(note, x + cw - pad, cy + pad + numSize * 0.42, { size: 19, color: hol ? C.red : C.muted, align: 'right', max: cw - nw - 3 * pad });
 
     if (sched && !bars.length) {

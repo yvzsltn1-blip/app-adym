@@ -4,19 +4,37 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#ffffff">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Nöbet Çizelgesi</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23e8590c'/%3E%3Cpath d='M8 11h16M8 11v13h16V11M12 7v6M20 7v6M12 18h3' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="fonts/fonts.css">
   <link rel="stylesheet" href="css/style.css">
 </head>
-<body>
-  <div id="app"><div class="auth"><p class="muted loading">Yükleniyor…</p></div></div>
+<body class="app-loading">
+  <div id="startup" class="startup" role="status" aria-live="polite">
+    <div class="startup-card">
+      <div class="startup-mark"><img src="/icons/icon-192.png" width="80" height="80" alt=""></div>
+      <p class="startup-eyebrow">HUKUK BİRİMİ</p>
+      <h1>Nöbet Çizelgesi</h1>
+      <p class="startup-description">Her nöbet, aynı sorumluluk.</p>
+      <div class="startup-track" aria-hidden="true"><span></span></div>
+      <p class="startup-status">Çizelgeniz hazırlanıyor<span aria-hidden="true">…</span></p>
+    </div>
+  </div>
+  <div class="pwa-tools"><button id="install-app" class="btn sm" hidden>Uygulama olarak ekle</button></div>
+  <div id="app"></div>
+  <noscript>Uygulamayı açmak için tarayıcınızda JavaScript’i etkinleştirin.</noscript>
   <div id="modal-root"></div>
   <div id="print"></div>
+  <div id="install-help" class="pwa-help" hidden role="status"><span></span><button class="btn sm" type="button">Kapat</button></div>
+  <button id="app-update" class="pwa-update" hidden type="button" aria-live="polite"></button>
   <div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
   <div id="busy" class="busy" hidden><div class="spinner"></div><span>Kaydediliyor…</span></div>
   <input type="file" id="import-file" accept="application/json,.json" hidden>
   <script defer src="js/html2canvas-pro.min.js"></script>
   <script type="module" src="js/app.js"></script>
+  <script defer src="js/pwa.js"></script>
 </body>
 </html>

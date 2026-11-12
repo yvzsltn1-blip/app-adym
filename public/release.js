@@ -1,0 +1,1 @@
+self.APP_RELEASE = '74448ccb0e353ef1cdb8128ae888c8505e5838cc5e5c1dc24fb9fe16b79b59fd';

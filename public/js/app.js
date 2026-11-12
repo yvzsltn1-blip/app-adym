@@ -2,6 +2,7 @@ import * as E from './engine.js';
 import { createStore, normalizeUsername } from './store.js';
 import { buildXlsx } from './xlsx.js';
 import { pngBlob, pdfBlob, drawSchedule } from './export.js';
+import { openDocuments } from './documents.js';
 
 /* ================= Yardımcılar ================= */
 const $ = (s, r = document) => r.querySelector(s);
@@ -102,6 +103,8 @@ async function saveCfg(mut, msg) { const c = clone(cfg()); mut(c); await run(() 
 
 /* ================= Giriş ve kurulum ================= */
 function renderLogin(setupNeeded, errMsg) {
+  const installTools = $('.pwa-tools');
+  if (installTools) document.body.appendChild(installTools);
   $('#app').innerHTML = '';
   const nt = $('#notice'); if (nt) nt.remove();
   if (typeof ui !== 'undefined') { ui.knownReq = null; ui.noticeHidden = null; }
@@ -110,7 +113,7 @@ function renderLogin(setupNeeded, errMsg) {
   const box = document.createElement('div');
   box.className = 'auth';
   box.innerHTML = '<div class="auth-card">' +
-    '<div class="auth-brand"><div class="logo">' + ic('cal') + '</div><div><b>Nöbet Çizelgesi</b><span>Afetlere Müdahale Şube Müdürlüğü</span></div></div>' +
+    '<div class="auth-brand"><div class="logo">' + ic('cal') + '</div><div><b>Nöbet Çizelgesi</b><span>Hukuk Birimi</span></div></div>' +
     (setupNeeded ?
       '<h1>İlk kurulum</h1><p class="muted">Bu formla <b>baş yönetici</b> hesabı açılır. Kayıt ekranı yoktur; diğer yöneticileri ve personel hesaplarını baş yönetici ekler. Bu form yalnızca bir kez görünür.</p>' +
       '<form id="setup-form" class="form">' +
@@ -131,6 +134,7 @@ function renderLogin(setupNeeded, errMsg) {
     (demo ? '<p class="demo-note">Deneme modu: veriler yalnızca bu tarayıcıda saklanır.' + (setupNeeded ? '' : ' <button class="link" id="demo-reset">Deneme verisini sıfırla</button>') + '</p>' : '') +
     '</div>';
   $('#app').appendChild(box);
+  if (installTools) $('.auth-card', box).appendChild(installTools);
   const showErr = m => { const p = $('.err-msg', box); p.textContent = m; p.hidden = !m; if (m) p.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
   const f = $('#login-form', box) || $('#setup-form', box);
   f.addEventListener('submit', async e => {
@@ -164,19 +168,22 @@ function field(label, input, hint) {
 const TABS = [
   { id: 'cizelge', label: 'Çizelge', icon: 'cal' },
   { id: 'izinler', label: 'İzinler', icon: 'leave' },
-  { id: 'denge', label: 'Denge', icon: 'scale', self: true },
+  { id: 'denge', label: 'Fazla mesai', icon: 'scale', self: true },
   { id: 'personel', label: 'Personel', icon: 'users', admin: true },
   { id: 'ayarlar', label: 'Ayarlar', icon: 'gear', admin: true }
 ];
 function shell() {
+  const installTools = $('.pwa-tools');
+  if (installTools) document.body.appendChild(installTools);
   $('#app').innerHTML =
     '<header class="top"><div class="top-in">' +
-    '<a class="brand" href="#/cizelge"><span class="logo">' + ic('cal') + '</span><span><b>Nöbet</b><i>Afetlere Müdahale</i></span></a>' +
+    '<a class="brand" href="#/cizelge"><span class="logo">' + ic('cal') + '</span><span><b>Nöbet</b><i>Hukuk Birimi</i></span></a>' +
     '<nav class="tabs" id="tabs"></nav>' +
     '<button class="me-btn" data-act="account">' + ic('user') + '<span>' + esc(me.displayName || me.username) + '</span>' + (isAdmin() ? '<em>' + ROLE_LABEL[me.role] + '</em>' : '') + '</button>' +
     '</div></header>' +
     (store.mode === 'demo' ? '<div class="demo-bar">Deneme modu — veriler yalnızca bu tarayıcıda. Gerçek kullanım için adresin sonundaki <code>?demo</code> kısmını kaldırın.</div>' : '') +
     '<main id="view"></main>';
+  if (installTools) $('.top-in').insertBefore(installTools, $('.me-btn'));
 }
 /* Personel Denge sayfasında yalnızca kendi bakiyesini görür (hesabı bir personele bağlıysa). */
 const tabAllowed = t => isAdmin() || (!t.admin && (!t.self || !!me.personId));
@@ -251,10 +258,12 @@ function viewSchedule() {
     (ym !== thisYm ? '<button class="link back" data-act="this-month">Bu aya dön</button>' : '') + '</div>' +
     '<div class="actions">';
   if (isAdmin()) {
+    h += '<button class="btn" data-act="documents">' + ic('rule') + 'Belgeler</button>';
     h += '<button class="btn primary" data-act="generate">' + ic('spark') + (sched ? 'Yeniden oluştur' : 'Çizelge oluştur') + '</button>';
     if (sched) h += '<button class="btn" data-act="finalize">' + ic(sched.status === 'final' ? 'undo' : 'check') + (sched.status === 'final' ? 'Taslağa al' : 'Kesinleştir') + '</button>';
   }
   if (sched) h += '<div class="btn-group" role="group" aria-label="Çıktı"><button class="btn" data-act="pdf" title="PDF olarak indir">' + ic('down') + 'PDF</button><button class="btn" data-act="png" title="Resim (PNG) olarak indir">' + ic('down') + 'PNG</button><button class="btn" data-act="xlsx" title="Excel olarak indir">' + ic('down') + 'Excel</button><button class="btn" data-act="print" title="Yazdır">' + ic('print') + 'Yazdır</button></div>';
+  h += '<button class="btn" data-act="month-requests">Talepler ve çalışılamayan günler</button>';
   h += '<button class="icon-btn" data-act="more" title="Diğer işlemler" aria-label="Diğer işlemler">' + ic('more') + '</button>' +
     '<button class="icon-btn" data-act="help" title="Nasıl kullanılır?" aria-label="Nasıl kullanılır?">' + ic('help') + '</button>';
   h += '</div></section>';
@@ -297,7 +306,7 @@ function viewSchedule() {
   h += ui.view === 'list' ? renderList(ym, sched, errDays) : ui.view === 'table' ? renderTable(ym, sched, errDays) : renderCal(ym, sched, errDays);
 
   h += '</div></div></section>';
-  if (!sched) h += '<p class="empty-note">' + (isAdmin() ? 'Günlere tıklayarak nöbetçileri sabitleyin veya o gün nöbet tutamayacak kişileri seçin. Ardından <b>Çizelge oluştur</b>\'a basın; seçimleriniz ve önceki aylardaki fazla/eksik nöbetler hesaba katılır. İsterseniz <button class="link" data-act="manual">boş çizelge açın</button>.' : 'Bu ayın çizelgesi henüz yayınlanmadı.') + '</p>';
+  if (!sched) h += '<p class="empty-note">' + (isAdmin() ? 'Günlere tıklayarak atamaları ve gün kısıtlarını seçin. Tüm talepleri yanıtladıktan sonra <b>Çizelge oluştur</b> düğmesine basın. Herkesin aylık hedefi 168 saattir; fazla mesai bakiyesi hedefi değiştirmez. İsterseniz <button class="link" data-act="manual">boş çizelge açın</button>.' : 'Gelecek günlere tıklayarak çalışamayacağınız günleri talep edebilirsiniz. Soluk renk bekleyen talebi, belirgin renk onaylanan günü gösterir.') + '</p>';
   else if (isAdmin() && sched.status !== 'final') h += '<p class="hint">Taslak çizelgeyi yalnızca yöneticiler görür. <b>Kesinleştir</b>\'e bastığınızda personel de görür. Bir güne tıklayarak nöbetçiyi elle değiştirebilirsiniz; elle değiştirilen günler sabitlenir (' + ic('pin', 'pin inline') + ').</p>';
   else if (isAdmin()) h += '<p class="hint">Bir güne tıklayarak nöbetçiyi elle değiştirebilirsiniz. Elle değiştirilen günler sabitlenir (' + ic('pin', 'pin inline') + ') ve yeniden oluşturmada korunur.</p>';
 
@@ -341,7 +350,27 @@ function slotsHtml(ym, sched, d) {
         '<i></i><span>' + esc(p ? E.fullName(p) : '?') + '</span>' + (pinned ? ic('pin', 'pin') : '') + '</div>';
     });
   });
-  return s;
+  return s + requestBadges(E.dateOf(ym, d));
+}
+function requestBadges(date) {
+  const reqs = (data.requests || []).filter(r => r.status === 'pending' && r.from <= date && date <= r.to);
+  const approved = (cfg().leaves || []).filter(l => l.from <= date && date <= l.to);
+  const label = (r, pending) => {
+    const p = E.person(cfg(), r.personId), t = E.leaveType(cfg(), r.type);
+    const text = (p ? p.name : '?') + ' · ' + (t.unavailable ? 'Çalışamaz' : t.name) + (pending ? ' (talep)' : '');
+    const title = E.fullName(p) + ' · ' + t.name + (pending ? ' · Onay bekliyor' : ' · Yönetici onaylı');
+    return '<span class="request-day ' + (pending ? 'pending' : 'approved') + '" title="' + esc(title) + '"><span class="request-label">' + esc(text) + '</span>' + (pending ? '' : '<span class="request-check" role="img" aria-label="Yönetici onaylı">' + ic('check') + '</span>') + '</span>';
+  };
+  return reqs.map(r => label(r, true)).join('') + approved.map(l => label(l, false)).join('');
+}
+function monthRequestsModal() {
+  const from = E.dateOf(ui.ym, 0), to = E.dateOf(ui.ym, E.daysIn(ui.ym) - 1);
+  const reqs = (data.requests || []).filter(r => r.from <= to && r.to >= from);
+  const leaves = (cfg().leaves || []).filter(l => l.from <= to && l.to >= from);
+  modal({ title: E.monthLabel(ui.ym) + ' · Talepler ve günler', wide: true,
+    body: '<p class="muted">Talepler ve onaylı günler çizelge silinse de korunur. Onaylanan günleri aşağıdaki Düzenle düğmesinden değiştirebilirsiniz.</p><div class="leave-list">' + (reqs.map(r => reqRow(r, isAdmin())).join('') || '<p>Bu ay talep yok.</p>') + '</div>' +
+      '<h3>Onaylı günler / izinler</h3>' + leaves.map(l => '<p>' + pname(E.person(cfg(), l.personId)) + ' · ' + esc(E.leaveType(cfg(), l.type).name) + ' · ' + E.fmtDate(l.from) + ' – ' + E.fmtDate(l.to) + (isAdmin() ? ' <button class="btn sm" data-act="leave-edit" data-id="' + l.id + '">Düzenle</button><button class="btn sm" data-act="leave-del" data-id="' + l.id + '">Sil</button>' : '') + '</p>').join(''),
+    foot: '<button class="btn" data-close>Kapat</button>' });
 }
 const WD3 = ['PAZ', 'PZT', 'SAL', 'ÇAR', 'PER', 'CUM', 'CMT'];
 function avatarHtml(p, cls = '') {
@@ -371,7 +400,6 @@ function renderCal(ym, sched, errDays) {
       '<span class="cal-top"><span class="cal-num">' + (d + 1) + '</span><span class="cal-wd-m">' + WD3[x.wd] + '</span><span class="cal-flags">' +
       (x.date === today ? '<em class="cal-today">Bugün</em>' : '') + (errDays[d] ? '<span class="cal-err" title="Kural ihlali">' + ic('alert') + '</span>' : '') + (pinned ? '<span class="cal-pin" title="Elle sabitlendi">' + ic('pin') + '</span>' : '') + '</span></span>' +
       (x.hol ? '<span class="cal-hol" title="' + esc(x.hol.name) + '">' + esc(x.hol.name) + '</span>' : '') +
-      (x.away.length ? '<span class="cal-away" title="İzinli: ' + esc(x.away.map(p => E.fullName(p)).join(', ')) + '">' + ic('leave') + '<span>' + x.away.map(p => esc(p.name)).join(', ') + '</span></span>' : '') +
       (excludedNames.length ? '<span class="cal-away" title="Nöbet tutamaz: ' + esc(excludedNames.join(', ')) + '">' + ic('rule') + '<span>Tutamaz: ' + esc(excludedNames.join(', ')) + '</span></span>' : '') +
       '<span class="cal-body">' + (lead1.length ? lead1.map(({ id }) => {
         const p = E.person(c, id);
@@ -381,7 +409,7 @@ function renderCal(ym, sched, errDays) {
         const p = E.person(c, id);
         return '<span class="cal-second' + (id === ui.focus ? ' sel' : '') + '" title="' + esc((E.postLabel(pst) ? E.postLabel(pst) + ': ' : '') + E.fullName(p)) + '">' + nameSpans(p) + '</span>';
       }).join('') + (!lead1.length ? (sched ? '<span class="cal-empty">Boş</span>' : '<span class="cal-none">—</span>') : '') + '</span>' +
-      '</button>';
+      requestBadges(x.date) + '</button>';
   }
   return h + '</div></div>';
 }
@@ -398,7 +426,7 @@ function renderList(ym, sched, errDays) {
       '<span class="dl2-date"><b>' + (d + 1) + '</b><small>' + E.WEEKDAYS[x.wd] + '</small></span>' +
       '<span class="dl2-main">' + (ids.length ? ids.map(id => { const p = E.person(c, id); return '<span class="c2-person">' + avatarHtml(p, 'sm') + '<b>' + esc(E.fullName(p)) + '</b>' + (p && p.code ? '<code>' + esc(p.code) + '</code>' : '') + '</span>'; }).join('') : sched ? '<span class="c2-empty">Boş</span>' : '<span class="faint">—</span>') + '</span>' +
       '<span class="dl2-side">' + ex.map(({ id, pst }) => { const p = E.person(c, id); return '<span class="c2-extra" style="--e:' + colorOf(id) + '"><i></i>' + (E.postLabel(pst) ? '<small>' + esc(E.postLabel(pst)) + '</small>' : '') + '<b>' + esc(p ? p.name : '?') + ' <strong>' + esc(p ? trUpper(p.surname) : '') + '</strong></b></span>'; }).join('') +
-      (x.hol ? '<em>' + esc(x.hol.name) + '</em>' : '') + (x.away.length ? '<span class="c2-away">İzinli: ' + x.away.map(p => esc(p.name)).join(', ') + '</span>' : '') +
+      (x.hol ? '<em>' + esc(x.hol.name) + '</em>' : '') + requestBadges(x.date) +
       (errDays[d] ? '<span class="err-dot">' + ic('alert') + '</span>' : '') + '</span></button>';
   }
   return h + '</div>';
@@ -442,10 +470,11 @@ function hoursTable(ym) {
   return '<h3>Aylık mesai</h3><div class="tbl-wrap"><table class="tbl compact"><thead><tr><th>Personel</th><th>Nöbet</th><th>Saat</th><th title="İzin ve nöbet payı düşülmüş hedef">Hedef</th><th>Durum</th></tr></thead><tbody>' +
     rows.map(r => { const diff = r.hours - r.target; return '<tr><td>' + pname(r.person) + '</td><td class="n">' + r.shifts + '</td><td class="n strong">' + r.hours + '</td><td class="n">' + Math.round(r.target) + '</td><td class="n">' +
       (r.target <= 0 ? '<span class="faint">–</span>' : diff < 0 ? '<span class="bal minus">' + Math.round(diff) + ' sa</span>' : '<span class="bal plus">tamam' + (diff > 0 ? ' +' + Math.round(diff) : '') + '</span>') + '</td></tr>'; }).join('') +
-    '</tbody></table></div><p class="note">Hedef ayda ' + H + ' saat; izinli iş günleri mesaiden sayılır (gün başına ' + num(H / 20) + ' saat düşülür).' + (extra ? ' Hedefi doldurmak için bu ay <b>' + extra + ' ek gün</b> açıldı; ek günler normal nöbet gibi sayılır.' : '') +
+    '</tbody></table></div><p class="note">Hedef ayda ' + H + ' saat; izinli iş günleri mesaiden sayılır (gün başına ' + num(8) + ' saat düşülür).' + (extra ? ' Hedefi doldurmak için bu ay <b>' + extra + ' ek gün</b> açıldı; ek günler normal nöbet gibi sayılır.' : '') +
     ' Hedefin üstündeki saatler çizelge kesinleşince kişinin <a href="#/izinler">fazla mesai bakiyesine</a> yazılır ve izin olarak kullanılabilir.</p>';
 }
-function summaryTables(ym) {
+function summaryTables(ym) { return hoursTable(ym); }
+function legacySummaryTables(ym) {
   const c = cfg(), groups = E.monthSummaryAll(c, data.schedules, ym);
   return hoursTable(ym) + groups.map(g => {
     if (!g.rows.length) return '';
@@ -469,6 +498,10 @@ const pname = p => p ? '<span class="pn" style="--c:' + colorOf(p.id) + '"><i></
 
 async function doGenerate() {
   const c = cfg(), ym = ui.ym, old = data.schedules[ym];
+  if (E.pendingRequests(data.requests || [], ym).length) {
+    toast('Bu ay için bekleyen talepler var. Önce her talebi onaylayın veya reddedin.', 'err');
+    monthRequestsModal(); return;
+  }
   for (const pst of (c.posts || []).filter(E.isActivePost)) {
     if (!E.postPeople(c, pst.id).some(p => p.active !== false)) { toast('"' + pst.name + '" görevine atanmış aktif personel yok. Personel sayfasından görev atayın.', 'err'); return; }
   }
@@ -483,8 +516,9 @@ async function doGenerate() {
   busy(true, 'Çizelge oluşturuluyor…');
   await new Promise(r => setTimeout(r, 30));
   let sched;
-  try { sched = E.generate(c, data.schedules, ym, { iters: 50000, tries: 4 }); } catch (e) { busy(false); toast('Oluşturma hatası: ' + e.message, 'err'); return; }
+  try { sched = E.generate(c, data.schedules, ym, { iters: 50000, tries: 4, requests: data.requests }); } catch (e) { busy(false); toast('Oluşturma hatası: ' + e.message, 'err'); return; }
   busy(false);
+  if (E.pendingRequests(data.requests || [], ym).length) { toast('Yeni talep geldi. Önce talepleri yanıtlayın.', 'err'); return; }
   const errors = E.validate(c, { ...data.schedules, [ym]: sched }, ym).filter(i => i.level === 'error');
   if (errors.length) {
     modal({ title: 'Uygun çizelge oluşturulamadı', body: '<p class="lead">Sabitlemeler, izinler veya gün kısıtları birlikte karşılanamıyor. Seçimlerinizi ya da görev kadrosunu düzenleyip tekrar deneyin. Mevcut çizelgeniz korundu.</p><ul class="issue-list">' + errors.map(i => '<li class="error">' + (i.day != null ? (i.day + 1) + '. gün: ' : '') + esc(i.msg) + '</li>').join('') + '</ul>' });
@@ -515,7 +549,7 @@ function cellModal(d) {
     let foot = '';
     if (canReq) {
       const mine = sched && cpPosts().some(pst => E.dayList(sched, pst.id, d).includes(me.personId));
-      const pend = (data.requests || []).find(r => r.status === 'pending' && r.from <= date && date <= r.to);
+      const pend = (data.requests || []).find(r => r.personId === me.personId && r.status === 'pending' && r.from <= date && date <= r.to);
       const onLeave = E.leaveOn(c, me.personId, date);
       if (mine) body += '<p class="cap-note ok">' + ic('cal') + '<span>Bu gün nöbetiniz var. İzin talebiniz onaylanırsa yönetici yerinize birini yazar.</span></p>';
       if (pend) body += '<p class="muted">Bu tarihi kapsayan bir talebiniz yöneticinin onayını bekliyor (' + E.fmtDate(pend.from) + ' – ' + E.fmtDate(pend.to) + ').</p>';
@@ -672,25 +706,36 @@ function overtimeUseNote(pid, x, editingId) {
   const c = cfg(), L = E.overtimeLedger(c, data.schedules, pid);
   if (!L) return '';
   const prev = editingId ? L.uses.filter(u => u.leave.id === editingId).reduce((a, u) => a + u.hours, 0) : 0;
-  const left = L.balance + prev, cost = E.leaveWorkdays(c, x, x.from, x.to) * L.dayHours;
+  const left = L.balance + prev, cost = E.overtimeRelease(c, data.schedules, { ...x, personId: pid }).debitHours;
   return 'Fazla mesai bakiyesi ' + hrsTxt(left) + '; bu izin ' + hrsTxt(cost) + ' düşer, kalan ' + hrsTxt(left - cost) + '.' + (left - cost < 0 ? ' Bakiye yetmiyor.' : '');
 }
 function overtimePanel(people) {
   const c = cfg(), H = E.monthlyHoursOf(c);
   if (!H || !people.length) return '';
   const otTypes = (c.leaveTypes || []).filter(t => t.overtime);
-  const rows = people.map(p => ({ p, L: E.overtimeLedger(c, data.schedules, p.id) })).filter(x => x.L && (x.L.months.length || x.L.uses.length));
+  const rows = people.map(p => ({ p, L: E.overtimeLedger(c, data.schedules, p.id) })).filter(x => x.L);
   let h = '<section class="panel"><h2>Fazla mesai bakiyesi</h2>';
   if (!rows.length) return h + '<p class="muted">Henüz kesinleşmiş çizelge yok. Bakiye, kesinleşen aylardan hesaplanır.</p></section>';
   h += '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Personel</th><th title="Kesinleşmiş aylarda tutulan saat − aylık hedef">Biriken</th><th title="Fazla mesai izni olarak kullanılan">Kullanılan</th><th>Kalan</th><th title="Kalan saatin iş günü karşılığı">Kalan izin</th></tr></thead><tbody>' +
     rows.map(({ p, L }) => {
       const tip = L.months.map(m => E.monthLabel(m.ym) + ': ' + m.hours + ' / ' + Math.round(m.target) + ' sa (' + (m.diff >= 0 ? '+' : '') + Math.round(m.diff) + ')').join('\n');
-      return '<tr><td>' + pname(p) + '</td><td class="n" title="' + esc(tip) + '">' + bal(L.earned) + '</td><td class="n">' + (L.used ? hrsTxt(L.used) + ' <small class="muted">(' + L.uses.reduce((a, u) => a + u.days, 0) + ' gün)</small>' : '<span class="faint">–</span>') + '</td>' +
+      return '<tr><td>' + pname(p) + (isAdmin() ? '<button class="icon-btn adj-btn" data-act="ot-edit" data-pid="' + p.id + '" title="Bakiye gir" aria-label="' + esc(E.fullName(p)) + ' için bakiye gir">' + ic('plus') + '</button>' : '') + '</td><td class="n" title="' + esc(tip) + '">' + bal(L.earned) + '</td><td class="n">' + (L.used ? hrsTxt(L.used) + ' <small class="muted">(' + L.uses.reduce((a, u) => a + u.days, 0) + ' gün)</small>' : '<span class="faint">–</span>') + '</td>' +
         '<td class="n strong">' + (L.balance < 0 ? '<span class="bal minus">' + hrsTxt(L.balance) + '</span>' : hrsTxt(L.balance)) + '</td><td class="n">' + (L.balance > 0 ? num(L.balance / L.dayHours) + ' gün' : '<span class="faint">–</span>') + '</td></tr>';
     }).join('') + '</tbody></table></div>' +
-    '<p class="note">Bakiye ' + E.monthLabel(E.hoursStartOf(c)) + ' itibarıyla tutulur. Her ayın hedefi ' + H + ' saattir. Kesinleşmiş her ayda hedefin üstünde tutulan saat bakiyeye eklenir, eksik kalınan saat düşülür (ayrıntı için <b>Biriken</b> sayısının üzerine gelin). ' +
-    (otTypes.length ? '<b>' + otTypes.map(t => esc(t.name)).join(', ') + '</b> türündeki izinlerde her iş günü için ' + num(H / 20) + ' saat bakiyeden düşer.' : 'Bakiyeyi izin olarak kullandırmak için Ayarlar → İzin türleri\'nde bir türü <b>Fazla mesaiden düşer</b> olarak işaretleyin.') + '</p></section>';
+    '<p class="note">Yönetici, isimlerin yanındaki + ikonuyla bakiye girebilir. Her nöbetlik fazla mesai izni 24 saat bakiyeden düşer.</p></section>';
   return h;
+}
+function overtimeBalanceModal(pid) {
+  const p = E.person(cfg(), pid), ledger = E.overtimeLedger(cfg(), data.schedules, pid);
+  modal({ title: E.fullName(p) + ' · Fazla mesai bakiyesi',
+    body: '<p>Mevcut bakiye: <b>' + hrsTxt(ledger.balance) + '</b>. Toplam bakiyenin kaç saat olmasını istediğinizi girin. Önceki kayıtlar korunur; fark düzeltme olarak eklenir.</p><form class="form" id="ot-form">' + field('Toplam bakiye (saat)', '<input type="number" name="hours" required step="1" value="' + ledger.balance + '">') + field('Açıklama', '<input name="note" required placeholder="Ör. Sistem öncesinden kalan 10 nöbet">') + '</form>' + '<div class="det-list">' + ledger.manual.map(a => '<p>' + esc(a.note) + ' · ' + hrsTxt(a.hours) + '</p>').join('') + '</div>',
+    foot: '<button class="btn ghost" data-close>Vazgeç</button><button class="btn primary" form="ot-form">Kaydet</button>',
+    onMount(el, close) { $('#ot-form', el).onsubmit = async e => {
+      e.preventDefault(); const f = new FormData(e.target), hours = +f.get('hours');
+      if (!Number.isFinite(hours)) return;
+      try { await saveCfg(c => { const current = E.overtimeLedger(c, data.schedules, pid).balance; (c.overtimeAdjustments = c.overtimeAdjustments || []).push({ id: uid(), personId: pid, hours: hours - current, note: f.get('note').trim(), by: me.displayName, at: Date.now() }); }, 'Fazla mesai bakiyesi kaydedildi'); close(); } catch (err) { /* bildirildi */ }
+    }; }
+  });
 }
 
 /* ---- İzin talepleri ---- */
@@ -703,12 +748,13 @@ function shiftsBetween(pid, from, to) {
 function reqRow(r, admin) {
   const c = cfg(), t = E.leaveType(c, r.type), p = E.person(c, r.personId), st = REQ_STATUS[r.status] || REQ_STATUS.pending;
   const x = { from: r.from, to: r.to };
-  return '<div class="leave-row req" style="--t:' + (t.color || '#888') + '"><div class="lr-main">' + (admin ? pname(p) : '') + '<span class="ltype">' + esc(t.name) + '</span><span class="chip ' + st[1] + '">' + st[0] + '</span></div>' +
+  return '<div class="leave-row req" style="--t:' + (t.color || '#888') + '"><div class="lr-main">' + pname(p) + '<span class="ltype">' + esc(t.name) + '</span><span class="chip ' + st[1] + '">' + st[0] + '</span></div>' +
     '<div class="lr-dates">' + E.fmtDate(r.from) + ' – ' + E.fmtDate(r.to) + '<small>' + E.leaveCalendarDays(x) + ' takvim günü · ' + E.leaveWorkdays(c, x, r.from, r.to) + ' iş günü</small></div>' +
     '<div class="lr-note">' + (r.note ? esc(r.note) : '') + (r.reply ? '<small class="reply">' + (r.status === 'rejected' ? 'Red gerekçesi: ' : 'Not: ') + esc(r.reply) + '</small>' : '') +
     (r.decidedBy ? '<small>' + esc(r.decidedBy) + ' · ' + new Date(r.decidedAt).toLocaleDateString('tr-TR') + '</small>' : '<small>Talep: ' + new Date(r.createdAt).toLocaleDateString('tr-TR') + '</small>') + '</div>' +
     '<div class="lr-act">' + (admin && r.status === 'pending' ? '<button class="btn sm primary" data-act="req-approve" data-id="' + r.id + '">' + ic('check') + 'Onayla</button><button class="btn sm" data-act="req-reject" data-id="' + r.id + '">Reddet</button>' :
-      !admin && r.status === 'pending' ? '<button class="btn sm" data-act="req-cancel" data-id="' + r.id + '">Geri çek</button>' : '') + '</div></div>';
+      admin && ['approved', 'rejected'].includes(r.status) ? '<button class="btn sm danger" data-act="req-delete" data-id="' + r.id + '">' + ic('trash') + 'Sil</button>' :
+      !admin && r.uid === me.uid && r.status === 'pending' ? '<button class="btn sm" data-act="req-cancel" data-id="' + r.id + '">Geri çek</button>' : '') + '</div></div>';
 }
 function requestsPanel() {
   const reqs = (data.requests || []).filter(r => (r.to || '') >= ui.year + '-01-01' && (r.from || '') <= ui.year + '-12-31' || r.status === 'pending');
@@ -720,7 +766,7 @@ function requestsPanel() {
       (done.length ? '<details class="others"><summary>Sonuçlanan talepler (' + done.length + ')</summary><div class="leave-list">' + done.map(r => reqRow(r, true)).join('') + '</div></details>' : '') + '</section>';
   }
   if (!me.personId) return '';
-  return '<section class="panel"><h2>Taleplerim</h2>' + (reqs.length ? '<div class="leave-list">' + reqs.map(r => reqRow(r, false)).join('') + '</div>' : '<p class="muted">Henüz izin talebiniz yok.</p>') + '</section>';
+  return '<section class="panel"><h2>Tüm talepler</h2>' + (reqs.length ? '<div class="leave-list">' + reqs.map(r => reqRow(r, false)).join('') + '</div>' : '<p class="muted">Henüz talep yok.</p>') + '</section>';
 }
 function reqModal(date) {
   const c = cfg(), day = typeof date === 'string' ? date : E.addDays(today, 1);
@@ -747,6 +793,7 @@ function reqModal(date) {
         e.preventDefault();
         const v = Object.fromEntries(new FormData(f));
         if (v.to < v.from) { toast('Bitiş tarihi başlangıçtan önce olamaz.', 'err'); return; }
+        if (!me.personId || (data.requests || []).some(r => r.personId === me.personId && r.status === 'pending' && r.from <= v.to && r.to >= v.from)) { toast('Personel bağlantınızı ve aynı tarihleri kapsayan bekleyen taleplerinizi kontrol edin.', 'err'); return; }
         try { await run(() => store.createRequest({ personId: me.personId, requester: me.displayName, type: v.type, from: v.from, to: v.to, note: v.note.trim() }), 'Talebiniz yöneticiye iletildi'); close(); } catch (err) { /* bildirildi */ }
       });
     }
@@ -787,7 +834,7 @@ function pickCover(leave, title, intro, okLabel) {
     '<span><b>' + esc(E.fullName(o.person)) + (rec ? ' <em class="rec">Önerilen</em>' : '') + '</b><small class="facts">' + facts(s, o) + '</small>' +
     (o.ok ? (rec && s.whyTop ? '<small class="okay">' + esc(s.whyTop) + '</small>' : '') + (o.move ? '<small class="okay">O gün ek ' + esc(o.move.map(id => (E.post(c, id) || {}).name || '').join(', ')) + ' nöbetinde; oradan alınır, dinlenmesi ve saati değişmez</small>' : '') : '<small>' + esc(o.notes.join(' · ')) + '</small>') + '</span></label>';
   const body = '<p class="lead">' + intro + '</p><p class="muted">' + who + ' izinliyken aşağıdaki nöbetler boşalıyor. Her biri için yerine kimin tutacağını seçin. Liste en uygundan başlar: önce dinlenme ve diğer kurallara uyanlar; aralarında nöbet bakiyesi en eksik olan, bu ay mesaisi hedefin altında kalan ve en uzun dinlenmiş olan üstte. ' +
-    'Yerine tutanın bakiyesine <b>+' + hrsOf() + ' saat</b>' + (E.leaveType(c, leave.type).compensate !== false ? ', ' + who + '\'in bakiyesine <b>−' + hrsOf() + ' saat</b>' : ' yazılır; bu izin türü telafi gerektirmediği için ' + who + '\'e eksi yazılmaz') + ' yazılır.</p>' +
+    (E.leaveType(c, leave.type).overtime ? 'İzinlinin bakiyesinden toplam <b>' + leave.debitHours + ' saat</b> düşer. Yerine tutanın çalıştığı saatler kendi aylık hesabına eklenir. Kurala uymayan birini de seçebilirsiniz; ihlal uyarı olarak gösterilir.' : 'Yerine tutanın çalıştığı saatler aylık hesabına eklenir.') + '</p>' +
     '<form id="cover-form" class="cover-pick">' + slots.map(s => {
       const pst = E.post(c, s.postId), ok = s.options.filter(o => o.ok), bad = s.options.filter(o => !o.ok);
       s.whyTop = ok.length ? why(s, ok[0], ok) : '';
@@ -806,6 +853,7 @@ function pickCover(leave, title, intro, okLabel) {
         $('[data-ok]', el).onclick = () => {
           const picks = {};
           slots.forEach(s => { const r = $('input[name="' + s.key + '"]:checked', el); picks[s.key] = r ? r.value : ''; });
+          if (E.leaveType(c, leave.type).overtime && Object.values(picks).some(v => !v || v === '*')) { toast('Fazla mesai izni için her nöbete yerine tutacak bir isim seçin. Kurala uymayanlar listesinden de seçim yapabilirsiniz.', 'err'); return; }
           done = true; close(); resolve({ picks });
         };
         const obs = new MutationObserver(() => { if (!el.isConnected) { obs.disconnect(); if (!done) resolve(null); } });
@@ -819,20 +867,33 @@ async function saveCover(plan) {
 }
 async function approveRequest(id) {
   const c = cfg(), r = data.requests.find(x => x.id === id);
+  if (!r || r.status !== 'pending') return;
   const p = E.person(c, r.personId);
   if (!p) { toast('Talebin bağlı olduğu personel bulunamadı.', 'err'); return; }
   const leave = { id: uid(), personId: r.personId, type: r.type, from: r.from, to: r.to, note: r.note || '', requestId: r.id };
+  if ((c.leaves || []).some(l => l.personId === r.personId && l.from <= r.to && l.to >= r.from)) { toast('Bu tarihlerde onaylı bir izin var. Önce onaylı günleri düzenleyin veya bu talebi reddedin.', 'err'); return; }
+  if (E.leaveType(c, leave.type).overtime) {
+    Object.assign(leave, E.overtimeRelease(c, data.schedules, leave));
+    if (!leave.debitHours) { toast('Fazla mesai izni için mevcut nöbet günü seçilmeli.', 'err'); return; }
+    if (E.overtimeLedger(c, data.schedules, p.id).balance < leave.debitHours) { toast('Fazla mesai bakiyesi bu izin için yetersiz.', 'err'); return; }
+  }
   const sel = await pickCover(leave, 'İzin onaylansın mı?', '<b>' + esc(E.fullName(p)) + '</b> · ' + esc(E.leaveType(c, r.type).name) + ' · ' + E.fmtDate(r.from) + ' – ' + E.fmtDate(r.to), 'Onayla ve işle');
   if (!sel) return;
+  if (E.leaveType(cfg(), leave.type).overtime) {
+    const fresh = E.overtimeRelease(cfg(), data.schedules, leave);
+    if (JSON.stringify(fresh.releasedDates) !== JSON.stringify(leave.releasedDates) || E.overtimeLedger(cfg(), data.schedules, leave.personId).balance < leave.debitHours) { toast('Çizelge veya bakiye değişti. Talebi güncel bilgilerle tekrar onaylayın.', 'err'); return; }
+  }
   const plan = planCover(leave, sel.picks);
   try {
-    await saveCfg(cc => { (cc.leaves = cc.leaves || []).push(leave); });
-    await run(async () => { await saveCover(plan); await store.updateRequest(id, { status: 'approved', decidedBy: me.displayName, decidedAt: Date.now() }); },
+    const nextCfg = clone(cfg()); (nextCfg.leaves = nextCfg.leaves || []).push(leave);
+    await run(() => store.resolveRequest(id, nextCfg, plan.schedules, { status: 'approved', decidedBy: me.displayName, decidedAt: Date.now() }),
       plan.changes.length ? 'İzin onaylandı, yerine atama çizelgeye işlendi' : 'İzin onaylandı ve kayda işlendi');
   } catch (e) { /* bildirildi */ }
 }
 function rejectRequest(id) {
-  const c = cfg(), r = data.requests.find(x => x.id === id), p = E.person(c, r.personId);
+  const c = cfg(), r = data.requests.find(x => x.id === id);
+  if (!r || r.status !== 'pending') return;
+  const p = E.person(c, r.personId);
   modal({
     title: 'Talebi reddet',
     body: '<p class="lead">' + esc(p ? E.fullName(p) : r.requester || '') + ' · ' + E.fmtDate(r.from) + ' – ' + E.fmtDate(r.to) + '</p><form class="form" id="rej-form">' + field('Gerekçe', '<input name="reply" placeholder="Personel bu notu görür (isteğe bağlı)">') + '</form>',
@@ -848,13 +909,14 @@ function rejectRequest(id) {
 }
 
 function leaveModal(id) {
-  const c = cfg(), l = id ? (c.leaves || []).find(x => x.id === id) : { personId: ui.leavePerson || '', type: (c.leaveTypes[0] || {}).id, from: today, to: today, note: '' };
+  let c = cfg();
+  const l = id ? (c.leaves || []).find(x => x.id === id) : { personId: ui.leavePerson || '', type: (c.leaveTypes[0] || {}).id, from: today, to: today, note: '' };
   const people = (c.people || []).filter(p => p.active !== false || p.id === l.personId);
   modal({
     title: id ? 'İzni düzenle' : 'İzin ekle',
     body: '<form class="form" id="leave-form">' +
       field('Personel', '<select name="personId" required><option value="">Seçin</option>' + people.map(p => '<option value="' + p.id + '"' + (p.id === l.personId ? ' selected' : '') + '>' + esc(E.fullName(p)) + '</option>').join('') + '</select>') +
-      field('İzin türü', '<select name="type">' + (c.leaveTypes || []).map(t => '<option value="' + t.id + '"' + (t.id === l.type ? ' selected' : '') + '>' + esc(t.name) + (t.compensate === false ? ' (telafi yok)' : '') + '</option>').join('') + '</select>') +
+      field('İzin türü', '<select name="type" required data-original-type="' + esc(id ? l.type : '') + '">' + leaveTypeOptions(l.type) + '</select><button type="button" class="link" data-act="lt-manage">İzin türlerini yönet</button>') +
       '<div class="row2">' + field('Başlangıç', '<input type="date" name="from" required value="' + l.from + '">') + field('Bitiş (dahil)', '<input type="date" name="to" required value="' + l.to + '">') + '</div>' +
       '<p class="calc muted" id="leave-calc"></p>' +
       field('Not', '<input name="note" value="' + esc(l.note || '') + '" placeholder="İsteğe bağlı">') + '</form>',
@@ -862,6 +924,7 @@ function leaveModal(id) {
     onMount(el, close) {
       const f = $('#leave-form', el);
       const calc = () => {
+        c = cfg();
         const v = Object.fromEntries(new FormData(f)), out = $('#leave-calc', el);
         if (!v.from || !v.to || v.to < v.from) { out.textContent = v.to < v.from ? 'Bitiş tarihi başlangıçtan önce olamaz.' : ''; return; }
         const x = { from: v.from, to: v.to };
@@ -877,11 +940,21 @@ function leaveModal(id) {
       f.addEventListener('input', calc); calc();
       f.addEventListener('submit', async e => {
         e.preventDefault();
+        c = cfg();
         const v = Object.fromEntries(new FormData(f));
         if (v.to < v.from) { toast('Bitiş tarihi başlangıçtan önce olamaz.', 'err'); return; }
         const overlap = (c.leaves || []).find(x => x.id !== id && x.personId === v.personId && x.from <= v.to && v.from <= x.to);
         if (overlap && !(await confirmBox('Çakışan izin', 'Bu kişinin ' + E.fmtDate(overlap.from) + ' – ' + E.fmtDate(overlap.to) + ' tarihli başka bir izni var. Yine de kaydedilsin mi?', 'Kaydet'))) return;
         const rec = { id: id || uid(), personId: v.personId, type: v.type, from: v.from, to: v.to, note: v.note.trim() };
+        if (E.leaveType(c, rec.type).overtime) {
+          const current = E.overtimeRelease(c, data.schedules, rec);
+          const kept = l.personId === rec.personId ? (l.releasedDates || []).filter(dt => dt >= rec.from && dt <= rec.to) : [];
+          rec.releasedDates = [...new Set(kept.concat(current.releasedDates))];
+          rec.debitHours = rec.releasedDates.length * hrsOf();
+          const ledger = E.overtimeLedger(c, data.schedules, rec.personId);
+          const refund = ledger.uses.filter(u => u.leave.id === id).reduce((n, u) => n + u.hours, 0);
+          if (!rec.debitHours || ledger.balance + refund < rec.debitHours) { toast('Mevcut nöbet günlerini seçin ve yeterli fazla mesai bakiyesi olduğundan emin olun.', 'err'); return; }
+        }
         if (l.requestId) rec.requestId = l.requestId;
         let plan = planCover(rec, {});
         if (plan.changes.length) {
@@ -905,6 +978,10 @@ function leaveModal(id) {
 
 /* ================= Denge (birikimli bakiye) ================= */
 function viewBalance() {
+  const people = (cfg().people || []).filter(p => p.active !== false && (isAdmin() || p.id === me.personId));
+  return '<section class="page-head"><div><h1>Fazla mesai bakiyesi</h1><p class="muted">Aylık hedef 168 saat. Bir nöbetlik izin 24 saat bakiyeden düşer. Biriken bakiye yeni çizelgenin hedefini değiştirmez.</p></div></section>' + overtimePanel(people);
+}
+function viewLegacyBalance() {
   const c = cfg(), months = Object.keys(data.schedules).filter(m => !c.settings.startMonth || m >= c.settings.startMonth).sort();
   const admin = isAdmin(), mine = r => admin || r.p.id === me.personId, H = hrsOf();
   const sa = x => num(x * H, 0) + ' <small class="muted">sa</small>';
@@ -1010,6 +1087,7 @@ function viewPeople() {
   people.forEach(p => {
     h += '<article class="pcard' + (p.active === false ? ' off' : '') + '" style="--c:' + colorOf(p.id) + '">' +
       '<div class="avatar">' + esc(E.initials(p)) + '</div><div class="pc-main"><h3>' + esc(E.fullName(p)) + (p.code ? '<span class="code">' + esc(p.code) + '</span>' : '') + '</h3>' +
+      (p.title ? '<p class="muted">' + esc(p.title) + '</p>' : '') +
       '<p>' + ((p.posts || []).map(id => esc((E.post(c, id) || {}).name || '?')).join(', ') || '<span class="bal minus">Görev atanmamış</span>') + '</p>' +
       '<p class="muted small">' + [p.active === false ? 'Pasif' : '', p.phone ? esc(p.phone) : '', (p.offWeekdays || []).length ? 'Tutmadığı günler: ' + p.offWeekdays.map(w => E.WEEKDAYS[w]).join(', ') : '', 'Yıllık izin hakkı: ' + (p.annualLeave || 0) + ' gün', E.shareOf(p) !== 1 ? 'Nöbet payı: %' + Math.round(E.shareOf(p) * 100) : ''].filter(Boolean).join(' · ') + '</p></div>' +
       '<div class="pc-act"><button class="icon-btn" data-act="person-edit" data-id="' + p.id + '" aria-label="Düzenle">' + ic('edit') + '</button></div></article>';
@@ -1017,12 +1095,14 @@ function viewPeople() {
   return h + '</div>' + (people.length ? '' : '<p class="empty-note">Henüz personel yok.</p>');
 }
 function personModal(id) {
+  if (!isAdmin()) return;
   const c = cfg(), p = id ? E.person(c, id) : { name: '', surname: '', code: '', phone: '', posts: (c.posts[0] ? [c.posts[0].id] : []), active: true, offWeekdays: [], annualLeave: 20, startDate: '', endDate: '', note: '' };
   const used = id && Object.values(data.schedules).some(s => Object.values(s.assign || {}).some(a => a.some(x => x && x.split(',').includes(id))));
   modal({
     title: id ? E.fullName(p) : 'Yeni personel', wide: true,
     body: '<form class="form" id="person-form"><div class="row2">' + field('Ad', '<input name="name" required value="' + esc(p.name) + '">') + field('Soyad', '<input name="surname" required value="' + esc(p.surname) + '">') + '</div>' +
       '<div class="row2">' + field('Kod / sicil', '<input name="code" value="' + esc(p.code) + '" placeholder="ör. 7690">', 'Çizelgede adın yanında yazılır: Gülden GENÇ-7690') + field('Telefon', '<input name="phone" type="tel" value="' + esc(p.phone || '') + '">') + '</div>' +
+      field('Unvan', '<input name="title" value="' + esc(p.title || '') + '" placeholder="ör. Enformasyon Memuru">') +
       '<fieldset><legend>Tuttuğu nöbet görevleri</legend>' + (c.posts || []).filter(pst => assignOf(pst) === 'people').map(pst => '<label class="check"><input type="checkbox" name="posts" value="' + pst.id + '"' + ((p.posts || []).includes(pst.id) ? ' checked' : '') + '> ' + esc(pst.name) + '</label>').join('') + ((c.posts || []).some(pst => assignOf(pst) !== 'people') ? '<small class="muted">' + (c.posts || []).filter(pst => assignOf(pst) !== 'people').map(pst => esc(pst.name)).join(', ') + ' için kimin tutacağı Ayarlar → Nöbet görevleri bölümünden seçilir.</small>' : '') + '</fieldset>' +
       '<fieldset><legend>Nöbet tutmadığı günler</legend><div class="wd-row">' + [1, 2, 3, 4, 5, 6, 0].map(w => '<label class="check pill"><input type="checkbox" name="off" value="' + w + '"' + ((p.offWeekdays || []).includes(w) ? ' checked' : '') + '> ' + E.WEEKDAYS_SHORT[w] + '</label>').join('') + '</div><small class="muted">Kalıcı kısıtlar için. Tek seferlik durumlar için izin girin.</small></fieldset>' +
       '<div class="row3">' + field('Yıllık izin hakkı (gün)', '<input type="number" name="annualLeave" min="0" max="60" value="' + (p.annualLeave || 0) + '">') + field('Göreve başlama', '<input type="date" name="startDate" value="' + (p.startDate || '') + '">', 'Boşsa sınır yok') + field('Ayrılış', '<input type="date" name="endDate" value="' + (p.endDate || '') + '">', 'Boşsa sınır yok') + '</div>' +
@@ -1036,7 +1116,7 @@ function personModal(id) {
         const f = e.target, fd = new FormData(f);
         const rec = {
           ...(id ? p : {}), id: id || uid(), name: fd.get('name').trim(), surname: trUpper(fd.get('surname').trim()), code: fd.get('code').trim(), phone: fd.get('phone').trim(),
-          posts: fd.getAll('posts'), offWeekdays: fd.getAll('off').map(Number), annualLeave: +fd.get('annualLeave') || 0,
+          title: fd.get('title').trim(), posts: fd.getAll('posts'), offWeekdays: fd.getAll('off').map(Number), annualLeave: +fd.get('annualLeave') || 0,
           startDate: fd.get('startDate'), endDate: fd.get('endDate'), note: fd.get('note').trim(), active: !!fd.get('active'),
           share: fd.get('share') === '' ? 100 : Math.max(0, +fd.get('share'))
         };
@@ -1068,8 +1148,20 @@ function setCard(id, icon, title, desc, body, foot) {
 }
 const optRow = (title, desc, control, tag = 'div', cls = '') => '<' + tag + ' class="opt ' + cls + '"><span class="opt-txt"><b>' + title + '</b>' + (desc ? '<small>' + desc + '</small>' : '') + '</span><span class="opt-ctl">' + control + '</span></' + tag + '>';
 const saveFoot = (note, btns) => '<span class="sc-note">' + (note || '') + '</span><span class="sc-dirty">Kaydedilmemiş değişiklik</span>' + btns;
+function leaveTypeOptions(selected) {
+  const types = [...(cfg().leaveTypes || [])];
+  if (selected && !types.some(t => t.id === selected)) types.push(E.leaveType(cfg(), selected));
+  return types.map(t => '<option value="' + esc(t.id) + '"' + (t.id === selected ? ' selected' : '') + '>' + esc(t.name) + '</option>').join('');
+}
+function leaveTypesModal() {
+  if (!isAdmin()) return;
+  modal({ title: 'İzin türlerini yönet', wide: true,
+    body: '<p class="muted">Tür adını ve özelliklerini düzenleyin, yeni tür ekleyin veya çöp kutusuyla kaldırın. Değişiklikleri Kaydet ile uygulayın. Kaldırılan türlerin geçmiş izin ve bakiye kayıtları korunur.</p><section class="set-card"><div class="sc-body"><div class="posts">' + (cfg().leaveTypes || []).map(ltRow).join('') + '</div><div class="btn-row"><button class="btn" data-act="lt-add">' + ic('plus') + 'Tür ekle</button><button class="btn primary" data-act="lt-save">Kaydet</button></div></div></section>',
+    foot: '<button class="btn" data-close>Kapat</button>' });
+}
 const ltRow = t => '<div class="post-row lt-row" data-id="' + t.id + '"><input type="color" name="color" value="' + (t.color || '#888888') + '" aria-label="Renk"><input name="name" value="' + esc(t.name) + '" aria-label="Tür adı">' +
   '<label class="check pill"><input type="checkbox" name="compensate"' + (t.compensate !== false ? ' checked' : '') + '> Telafi edilir</label><label class="check pill"><input type="checkbox" name="annual"' + (t.annual ? ' checked' : '') + '> Yıllık izinden düşer</label><label class="check pill"><input type="checkbox" name="overtime"' + (t.overtime ? ' checked' : '') + '> Fazla mesaiden düşer</label>' +
+  '<label class="check pill"><input type="checkbox" name="unavailable"' + (t.unavailable ? ' checked' : '') + '> Çalışılamayan gün</label>' +
   '<button class="icon-btn danger-h" data-act="lt-del" data-id="' + t.id + '" aria-label="Türü sil">' + ic('trash') + '</button></div>';
 
 function viewSettings() {
@@ -1105,7 +1197,7 @@ function viewSettings() {
   /* --- Dağıtım kuralları --- */
   h += setCard('dagitim', 'sliders', 'Dağıtım kuralları', 'Otomatik dağıtımın herkese uyguladığı genel kurallar.',
     '<form class="opts" id="set-rules">' +
-    optRow('Aylık mesai hedefi (saat)', 'Her personelin ayda en az bu kadar saat nöbet tutması sağlanır; 24 saatlik nöbetle 160 saat = en az 7 nöbet. Yetmezse 2. nöbetçi gibi her gün olmayan görevlere ek gün açılır; ek günler normal nöbet gibi sayılır. İzinli iş günleri mesaiden sayılır. Boş bırakırsanız uygulanmaz.', '<input type="number" class="num" name="monthlyHours" min="0" max="400" step="8" placeholder="Yok" aria-label="Aylık mesai hedefi" value="' + (E.monthlyHoursOf(c) || '') + '">', 'label') +
+    optRow('Aylık mesai hedefi (saat)', 'Herkes için sabit 168 saat, yani 7 nöbet. Fazla mesai bakiyesi hedefi değiştirmez.', '<input type="number" class="num" name="monthlyHours" readonly aria-label="Aylık mesai hedefi" value="168">', 'label') +
     optRow('Fazla mesai bakiyesi başlangıcı', 'Bu aydan itibaren kesinleşen çizelgelerde hedefin üstünde tutulan saatler kişinin fazla mesai bakiyesine yazılır ve izin olarak kullanılabilir. Bakiye İzinler sayfasında görünür.', '<input type="month" name="hoursStartMonth" aria-label="Fazla mesai bakiyesi başlangıcı" value="' + E.hoursStartOf(c) + '">', 'label') +
     optRow('Hafta sonu, Cuma ve tatilleri dengeli dağıt', 'Açıkken bu günler ayrı ayrı dengelenir; aynı kişiye hep aynı gün düşmez. Kapalıyken yalnızca toplam nöbet sayısı dengelenir.', '<input type="checkbox" class="sw" name="balanceWeekends"' + (s.balanceWeekends !== false ? ' checked' : '') + '>', 'label') +
     optRow('Art arda iki hafta sonu nöbet yazma', 'Bir hafta sonu nöbet tutan, sonraki hafta sonu boş kalır. Önceki ayın son hafta sonu da dikkate alınır. Sabit döngü görevleri (ör. 2. nöbetçi) bu kurala tabi değildir.', '<input type="checkbox" class="sw" name="noConsecutiveWeekends"' + (s.noConsecutiveWeekends ? ' checked' : '') + '>', 'label') +
@@ -1136,7 +1228,7 @@ function viewSettings() {
   h += setCard('izin', 'leave', 'İzin türleri', 'İzin girerken seçilen türler ve nöbet dengesine etkileri.',
     '<dl class="defs"><div><dt>Telafi edilir</dt><dd>Kişi izindeyken de nöbet hakkı işler. Tutamadığı nöbetler eksi bakiye olur, sonraki aylarda tamamlanır. İşaretli değilse (ör. görevlendirme) payı o ay diğerlerine geçer, borç doğmaz.</dd></div>' +
     '<div><dt>Yıllık izinden düşer</dt><dd>Bu türdeki izin günleri kişinin yıllık izin hakkından düşülür.</dd></div>' +
-    '<div><dt>Fazla mesaiden düşer</dt><dd>Aylık mesai hedefinin üstünde biriken saatler izin olarak kullanılır; her iş günü ' + num(E.monthlyHoursOf(c) / 20) + ' saat bakiyeden düşer. Bakiye İzinler sayfasında görünür. Bu türü “Telafi edilir” işaretlemeyin: kişi zaten fazla çalıştığı için nöbet borcu doğmamalı.</dd></div></dl>' +
+    '<div><dt>Fazla mesaiden düşer</dt><dd>Aylık mesai hedefinin üstünde biriken saatler izin olarak kullanılır; her nöbet günü ' + num(24) + ' saat bakiyeden düşer. Bakiye İzinler sayfasında görünür. Bu türü “Telafi edilir” işaretlemeyin: kişi zaten fazla çalıştığı için nöbet borcu doğmamalı.</dd></div></dl>' +
     '<div class="posts">' + (c.leaveTypes || []).map(ltRow).join('') + '</div>' +
     '<div class="btn-row"><button class="btn" data-act="lt-add">' + ic('plus') + 'Tür ekle</button>' +
     ((c.leaveTypes || []).some(t => t.overtime) ? '' : '<button class="btn" data-act="lt-add-ot">' + ic('plus') + 'Fazla mesai izni türünü ekle</button>') + '</div>',
@@ -1191,7 +1283,7 @@ window.addEventListener('resize', settingsSpy);
 /* ---- Nöbet görevleri: kimler tutar, ne sıklıkla ---- */
 const ASSIGN = [
   ['people', 'Personel kartında işaretlenenler'],
-  ['fixed', 'Sabit tek kişi (kendi 24/72 döngüsünde)'],
+  ['fixed', 'Sabit tek kişi'],
   ['pool', 'Seçilen kişiler arasında dönüşümlü'],
   ['all', 'Tüm personel arasında karışık'],
   ['off', 'Kapalı (bu görev yok)']
@@ -1204,28 +1296,28 @@ function postCard(c, p, isNew) {
   return '<div class="post-card" data-id="' + p.id + '" data-assign="' + as + '">' +
     '<div class="pc-row"><input name="name" value="' + esc(p.name) + '" aria-label="Görev adı"><button class="icon-btn danger-h" data-act="post-del" data-id="' + (isNew ? '' : p.id) + '" aria-label="Görevi sil">' + ic('trash') + '</button></div>' +
     '<label class="field"><span>Kimler tutar?</span><select name="assign">' + ASSIGN.map(([v, l]) => '<option value="' + v + '"' + (as === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></label>' +
-    '<div class="show-fixed">' + field('Sabit nöbetçi', '<select name="fixedId"><option value="">Seçin</option>' + active.map(x => '<option value="' + x.id + '"' + (x.id === fixedId ? ' selected' : '') + '>' + esc(E.fullName(x)) + '</option>').join('') + '</select>', 'Bu kişi izinli olmadığı her 4 günde bir (24/72) bu görevi tutar.') + '</div>' +
+    '<div class="show-fixed">' + field('Sabit nöbetçi', '<select name="fixedId"><option value="">Seçin</option>' + active.map(x => '<option value="' + x.id + '"' + (x.id === fixedId ? ' selected' : '') + '>' + esc(E.fullName(x)) + '</option>').join('') + '</select>', 'İhtiyaca göre seçiliyken aylık hedefi tamamlamak için atanır. Diğer sıklıklarda kendi 24/72 döngüsünü sürdürür.') + '</div>' +
     '<div class="show-pool"><span class="lbl">Dönüşüme katılacak kişiler</span><div class="pool-picks">' + active.map(x => '<label class="check pill"><input type="checkbox" name="poolIds" value="' + x.id + '"' + ((p.poolIds || []).includes(x.id) ? ' checked' : '') + '> ' + esc(E.fullName(x)) + '</label>').join('') + '</div><small class="muted">Nöbetler bu kişiler arasında adil dağıtılır; fazla tutan sonraki aylarda daha az alır.</small></div>' +
     '<div class="show-people"><span class="lbl">Bu nöbeti tutan kişiler</span><div class="pool-picks">' + active.map(x => '<label class="check pill"><input type="checkbox" name="members" value="' + x.id + '"' + ((x.posts || []).includes(p.id) ? ' checked' : '') + '> ' + esc(E.fullName(x)) + ((c.posts || []).some(o => o.id !== p.id && o.assign === 'fixed' && o.fixedId === x.id && o.assign !== 'off') ? ' <small class="muted">(sabit ' + esc((c.posts.find(o => o.assign === 'fixed' && o.fixedId === x.id) || {}).name || '') + ', bu dağıtıma girmez)</small>' : '') + '</label>').join('') + '</div><small class="muted">Aynı seçim personel kartındaki "Tuttuğu nöbet görevleri" kısmında da görünür.</small></div>' +
     '<div class="row2 show-daily">' +
-    field('Sıklık', '<select name="every">' + [[1, 'Her gün'], [2, '2 günde bir'], [3, '3 günde bir'], [4, '4 günde bir']].map(([v, l]) => '<option value="' + v + '"' + ((+p.every || 1) === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>') +
+    field('Sıklık', '<select name="every">' + [['need', 'İhtiyaca göre'], [1, 'Her gün'], [2, '2 günde bir'], [3, '3 günde bir'], [4, '4 günde bir']].map(([v, l]) => '<option value="' + v + '"' + (String(p.every ?? (p.id === 'ek' ? 'need' : 1)) === String(v) ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>', 'İhtiyaca göre: aylık mesai / nöbet hedefi eksik kalan personel için açılır; belirli günlerde zorunlu değildir. 24/72 dinlenme kuralı korunur.') +
     field('Günde kaç kişi', '<input type="number" name="required" min="1" max="5" value="' + (p.required || 1) + '">') + '</div>' +
     '</div>';
 }
 function capacityNote(c) {
   const cyc = E.cycleDays(c), active = (c.people || []).filter(p => p.active !== false).length;
   let perDay = 0;
-  (c.posts || []).filter(E.isActivePost).forEach(p => { perDay += E.isCyclePost(p) ? 1 / cyc : (+p.required || 1) / Math.max(1, +p.every || 1); });
+  (c.posts || []).filter(E.isActivePost).forEach(p => { perDay += E.isOnDemandPost(p) ? 0 : E.isCyclePost(p) ? 1 / cyc : (+p.required || 1) / Math.max(1, +p.every || 1); });
   const needPeople = Math.ceil(perDay * cyc - 1e-9);
   /* Mesai hedefi: 30 günlük bir ayda herkesin hedefi doldurması için günde gereken ortalama nöbetçi. */
   const H = E.monthlyHoursOf(c), per = H ? Math.ceil(H / (+(c.settings.shiftHours) || 24) - 1e-9) : 0;
-  const hoursPerDay = per * active / 30, canExtra = (c.posts || []).some(p => E.isActivePost(p) && !E.isCyclePost(p) && (+p.every || 1) > 1);
+  const hoursPerDay = per * active / 30, canExtra = (c.posts || []).some(p => E.isActivePost(p) && !E.isCyclePost(p) && (E.isOnDemandPost(p) || (+p.every || 1) > 1));
   const hoursNote = per ? ' Aylık ' + H + ' saat mesai için kişi başı en az <b>' + per + ' nöbet</b>, yani günde ortalama <b>' + num(hoursPerDay) + ' nöbetçi</b> gerekir.' +
     (hoursPerDay > perDay + 1e-9 ? (canExtra ? ' Aradaki fark, her gün olmayan görevlere açılan ek günlerle otomatik kapatılır.' : ' Ek gün açılabilecek (her gün olmayan) bir görev yok; bu haliyle bazı kişilerin mesaisi eksik kalır.') : '') : '';
   return '<p class="cap-note ' + (needPeople > active ? 'bad' : 'ok') + '">' + ic(needPeople > active ? 'alert' : 'check') + '<span>Bu ayarlarla günde ortalama <b>' + num(perDay) + ' nöbetçi</b> gerekiyor. 24/72 düzeninde herkes en fazla 4 günde bir tutabildiği için en az <b>' + needPeople + ' kişi</b> lazım; şu an <b>' + active + ' aktif personel</b> var.' + (needPeople > active ? ' Bu haliyle bazı günler boş kalır ya da dinlenme kuralı ihlal edilir; sıklığı azaltın veya personel ekleyin.' : '') + hoursNote + '</span></p>';
 }
 function postsSection(c) {
-  return setCard('gorevler', 'shield', 'Nöbet görevleri', 'Her gün doldurulacak nöbet görevleri ve bunları kimlerin tutacağı. İlk görev ana nöbettir (ör. Enformasyon Memuru); diğerleri (ör. 2. Nöbetçi) sabit bir kişiye, seçtiğiniz kişilere ya da herkese verilebilir.',
+  return setCard('gorevler', 'shield', 'Nöbet görevleri', 'Her gün doldurulacak nöbet görevleri ve bunları kimlerin tutacağı. İlk görev 1. Nöbetçi; diğerleri (ör. 2. Nöbetçi) sabit bir kişiye, seçtiğiniz kişilere ya da herkese verilebilir. Personel unvanları Personel bölümünden düzenlenir.',
     '<div class="post-cards">' + (c.posts || []).map(p => postCard(c, p)).join('') + '</div>' + capacityNote(c) +
     '<div class="btn-row"><button class="btn" data-act="post-add">' + ic('plus') + 'Görev ekle</button></div>',
     saveFoot('Yeni oluşturulan çizelgelerde uygulanır; mevcut ayı güncellemek için o ayı yeniden oluşturun.', '<button class="btn primary" data-act="posts-save">Görevleri kaydet</button>'));
@@ -1325,6 +1417,8 @@ const actions = {
   year(t) { ui.year += +t.dataset.n; render(); },
   focus(t) { ui.focus = t.dataset.pid && ui.focus !== t.dataset.pid ? t.dataset.pid : null; render(); },
   cell(t) { cellModal(+t.dataset.d); },
+  'month-requests'() { monthRequestsModal(); },
+  'ot-edit'(t) { overtimeBalanceModal(t.dataset.pid); },
   generate: doGenerate,
   async finalize() {
     const s = clone(data.schedules[ui.ym]);
@@ -1340,6 +1434,7 @@ const actions = {
     await run(() => store.deleteSchedule(ui.ym), 'Silindi').catch(() => { });
   },
   print: printSchedule,
+  documents() { if (isAdmin()) openDocuments({ cfg: cfg(), schedules: data.schedules, ym: ui.ym, modal, download, toast, store, busy }); },
   xlsx() { download(buildXlsx(cfg(), data.schedules, ui.ym), fileBase() + '.xlsx'); },
   async png() { await exportFile(() => pngBlob(cfg(), data.schedules, ui.ym), '.png'); },
   async pdf() { await exportFile(() => pdfBlob(cfg(), data.schedules, ui.ym), '.pdf'); },
@@ -1452,6 +1547,12 @@ const actions = {
   'notice-hide'() { (data.requests || []).filter(r => r.status === 'pending').forEach(r => ui.noticeHidden.add(r.id)); renderNotices(); },
   'req-approve'(t) { approveRequest(t.dataset.id); },
   'req-reject'(t) { rejectRequest(t.dataset.id); },
+  async 'req-delete'(t) {
+    const r = (data.requests || []).find(r => r.id === t.dataset.id);
+    if (!isAdmin() || !r || !['approved', 'rejected'].includes(r.status)) return;
+    if (!(await confirmBox('Sonuçlanan talep silinsin mi?', esc(E.fullName(E.person(cfg(), r.personId))) + ': ' + E.fmtDate(r.from) + ' – ' + E.fmtDate(r.to) + '<p>Talep kaydı kalıcı olarak silinecek. Onaylanmış izin kaydı ve çizelge korunur.</p>', 'Sil', true))) return;
+    run(() => store.deleteRequest(r.id), 'Talep silindi').catch(() => { });
+  },
   async 'req-cancel'(t) {
     if (!(await confirmBox('Talep geri çekilsin mi?', 'Bekleyen izin talebiniz silinecek.', 'Geri çek', true))) return;
     run(() => store.deleteRequest(t.dataset.id), 'Talep geri çekildi').catch(() => { });
@@ -1494,7 +1595,7 @@ const actions = {
         mode: assign === 'fixed' ? 'cycle' : assign === 'off' ? 'off' : 'daily',
         members: $$('[name=members]:checked', r).map(x => x.value),
         fixedId: $('[name=fixedId]', r).value, poolIds: $$('[name=poolIds]:checked', r).map(x => x.value),
-        every: +$('[name=every]', r).value || 1, required: Math.max(1, +$('[name=required]', r).value || 1)
+        every: $('[name=every]', r).value === 'need' ? 'need' : (+$('[name=every]', r).value || 1), frequencyVersion: 1, required: Math.max(1, +$('[name=required]', r).value || 1)
       };
     });
     if (!posts.length) { toast('En az bir görev olmalı.', 'err'); return; }
@@ -1502,27 +1603,34 @@ const actions = {
     if (bad) { toast('"' + bad.name + '" için ' + (bad.assign === 'fixed' ? 'sabit nöbetçiyi seçin.' : 'en az bir kişi işaretleyin.'), 'err'); return; }
     await saveCfg(c => { c.posts = posts.map(p => ({ ...(c.posts.find(x => x.id === p.id) || {}), ...p, short: p.name })); c.people.forEach(pp => { pp.posts = (pp.posts || []).filter(id => posts.some(x => x.id === id)); posts.filter(x => x.assign === 'people').forEach(x => { const on = x.members.includes(pp.id), has = pp.posts.includes(x.id); if (on && !has) pp.posts.push(x.id); if (!on && has && pp.active !== false) pp.posts = pp.posts.filter(id => id !== x.id); }); }); c.posts.forEach(x => { delete x.members; }); }, 'Görevler kaydedildi').catch(() => { });
   },
-  'lt-add'() {
-    const box = $$('.posts').slice(-1)[0], tmp = document.createElement('div');
+  'lt-manage'() { leaveTypesModal(); },
+  'lt-add'(t) {
+    const box = $('.posts', t.closest('.set-card')), tmp = document.createElement('div');
     tmp.innerHTML = ltRow({ id: uid(), name: 'Yeni izin türü', color: '#6b6f7a' });
     const div = tmp.firstChild; box.appendChild(div); $('[name=name]', div).select();
     box.closest('.set-card').classList.add('dirty');
   },
   'lt-add-ot'(t) {
-    const box = $$('.posts').slice(-1)[0], tmp = document.createElement('div');
+    const box = $('.posts', t.closest('.set-card')), tmp = document.createElement('div');
     tmp.innerHTML = ltRow({ id: (cfg().leaveTypes || []).some(x => x.id === 'mesai') ? uid() : 'mesai', name: 'Fazla mesai izni', color: '#7a4fd1', compensate: false, overtime: true });
     box.appendChild(tmp.firstChild); box.closest('.set-card').classList.add('dirty'); t.remove();
     toast('Tür eklendi; kaydetmek için Kaydet\'e basın.');
   },
   'lt-del'(t) {
-    const id = t.dataset.id;
-    if (id && (cfg().leaves || []).some(l => l.type === id)) { toast('Bu türde kayıtlı izin var; önce o izinleri silin veya türünü değiştirin.', 'err'); return; }
     t.closest('.set-card').classList.add('dirty');
     t.closest('.post-row').remove();
   },
-  async 'lt-save'() {
-    const types = $$('.lt-row').map(r => ({ id: r.dataset.id, name: $('[name=name]', r).value.trim() || 'İzin', color: $('[name=color]', r).value, compensate: $('[name=compensate]', r).checked, annual: $('[name=annual]', r).checked, overtime: $('[name=overtime]', r).checked }));
-    await saveCfg(c => { c.leaveTypes = types; }, 'İzin türleri kaydedildi').catch(() => { });
+  async 'lt-save'(t) {
+    if (!isAdmin()) return;
+    const card = t.closest('.set-card');
+    const types = $$('.lt-row', card).map(r => ({ ...E.leaveType(cfg(), r.dataset.id), id: r.dataset.id, name: $('[name=name]', r).value.trim(), color: $('[name=color]', r).value, compensate: $('[name=compensate]', r).checked, annual: $('[name=annual]', r).checked, overtime: $('[name=overtime]', r).checked, unavailable: $('[name=unavailable]', r).checked }));
+    if (!types.length || types.some(x => !x.name)) { toast('En az bir izin türü bırakın ve her türe bir ad verin.', 'err'); return; }
+    if (types.some(x => x.overtime && (x.annual || x.unavailable || x.compensate))) { toast('Fazla mesai izninde yalnızca Fazla mesaiden düşer seçeneğini işaretleyin.', 'err'); return; }
+    try {
+      await saveCfg(c => { E.setLeaveTypes(c, types); }, 'İzin türleri kaydedildi');
+      card.classList.remove('dirty');
+      $$('#leave-form select[name=type]').forEach(select => { const selected = select.value; select.innerHTML = leaveTypeOptions(types.some(x => x.id === selected) || selected === select.dataset.originalType ? selected : types[0].id); select.dispatchEvent(new Event('input', { bubbles: true })); });
+    } catch (err) { /* bildirildi */ }
   },
   async 'hol-del'(t) { await saveCfg(c => { c.holidays = c.holidays.filter(h => h.date !== t.dataset.date); }, 'Tatil silindi').catch(() => { }); },
   async 'hol-year'() {
@@ -1542,7 +1650,7 @@ const actions = {
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-act]');
   if (!t || t.tagName === 'SELECT' || !actions[t.dataset.act]) return;
-  if (t.closest('.modal')) return;
+  if (t.closest('.modal') && !['lt-manage', 'lt-add', 'lt-add-ot', 'lt-del', 'lt-save', 'req-approve', 'req-reject', 'req-delete', 'req-cancel', 'leave-edit', 'leave-del'].includes(t.dataset.act)) return;
   e.preventDefault();
   actions[t.dataset.act](t, e);
 });
@@ -1592,9 +1700,14 @@ $('#import-file').addEventListener('change', async e => {
 });
 
 /* ================= Başlangıç ================= */
+function finishStartup() {
+  document.body.classList.remove('app-loading');
+  $('#startup').hidden = true;
+}
 (async function boot() {
   try { store = await createStore(); } catch (e) {
     $('#app').innerHTML = '<div class="auth"><div class="auth-card"><h1>Bağlantı kurulamadı</h1><p class="muted">Firebase kitaplıkları yüklenemedi. İnternet bağlantınızı kontrol edip sayfayı yenileyin.</p><p class="err-msg">' + esc(e.message) + '</p></div></div>';
+    finishStartup();
     return;
   }
   store.onAuth(async (user, err) => {
@@ -1604,6 +1717,7 @@ $('#import-file').addEventListener('change', async e => {
       let setupNeeded = false, msg = err ? err.message : '';
       try { setupNeeded = !(await store.isSetup()); } catch (e) { msg = msg || e.message; }
       renderLogin(setupNeeded, msg);
+      finishStartup();
       return;
     }
     shell();
@@ -1613,7 +1727,7 @@ $('#import-file').addEventListener('change', async e => {
     unsub = store.subscribe(d => {
       /* Personel yalnızca kesinleşmiş çizelgeleri görür; taslaklar yöneticiye özeldir. */
       if (!isAdmin()) Object.keys(d.schedules).forEach(k => { if (d.schedules[k].status !== 'final') delete d.schedules[k]; });
-      data = d; render();
-    }, e => { $('#view').innerHTML = '<div class="panel"><h2>Veriler okunamadı</h2><p class="err-msg">' + esc(e.message) + '</p></div>'; });
+      data = d; render(); finishStartup();
+    }, e => { $('#view').innerHTML = '<div class="panel"><h2>Veriler okunamadı</h2><p class="err-msg">' + esc(e.message) + '</p></div>'; finishStartup(); });
   });
 })();

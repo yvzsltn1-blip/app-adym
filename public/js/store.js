@@ -145,20 +145,30 @@ async function firebaseStore() {
       let config = null, schedules = null, requests = null;
       const admin = me && (me.role === 'super' || me.role === 'admin');
       const emit = () => { if (config && schedules && requests) cb({ config, schedules, requests }); };
-      const u1 = F.onSnapshot(ref('app', 'config'), s => { config = s.exists() ? s.data() : E.defaultConfig(); emit(); }, e => onError && onError(friendly(e)));
+      const u1 = F.onSnapshot(ref('app', 'config'), s => { config = E.normalizeConfig(s.exists() ? s.data() : E.defaultConfig()); emit(); }, e => onError && onError(friendly(e)));
       const col = F.collection(db, 'schedules');
       const q = admin ? col : F.query(col, F.where('status', '==', 'final'));
       const u2 = F.onSnapshot(q, qs => {
         schedules = {}; qs.forEach(d => { schedules[d.id] = d.data(); }); emit();
       }, e => onError && onError(friendly(e)));
       const rcol = F.collection(db, 'requests');
-      const u3 = F.onSnapshot(admin ? rcol : F.query(rcol, F.where('uid', '==', me ? me.uid : '-')), qs => {
+      const u3 = F.onSnapshot(rcol, qs => {
         requests = []; qs.forEach(d => requests.push({ id: d.id, ...d.data() }));
         requests.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); emit();
       }, e => onError && onError(friendly(e)));
       return () => { u1(); u2(); u3(); };
     },
     async saveConfig(cfg) { try { await F.setDoc(ref('app', 'config'), clean({ ...cfg, updatedAt: Date.now() })); } catch (e) { throw friendly(e); } },
+    async loadDocumentSettings() { try { const s = await F.getDoc(ref('documentDrafts', 'settings')); return s.exists() ? s.data() : {}; } catch (e) { throw friendly(e); } },
+    async loadDocumentDraft(key) { try { const s = await F.getDoc(ref('documentDrafts', key)); return s.exists() ? s.data() : null; } catch (e) { throw friendly(e); } },
+    async saveDocumentDraft(key, draft, settings) {
+      try {
+        const b = F.writeBatch(db), updatedAt = Date.now();
+        b.set(ref('documentDrafts', key), clean({ ...draft, updatedAt }));
+        b.set(ref('documentDrafts', 'settings'), clean({ ...settings, updatedAt }));
+        await b.commit();
+      } catch (e) { throw friendly(e); }
+    },
     async saveDayPlan(cfg, s) {
       try {
         const b = F.writeBatch(db), updatedAt = Date.now();
@@ -236,7 +246,30 @@ async function firebaseStore() {
 
     /* ---- İzin talepleri ---- */
     async createRequest(r) { try { await F.addDoc(F.collection(db, 'requests'), clean({ ...r, uid: me.uid, status: 'pending', createdAt: Date.now() })); } catch (e) { throw friendly(e); } },
-    async updateRequest(id, f) { try { await F.updateDoc(ref('requests', id), clean(f)); } catch (e) { throw friendly(e); } },
+    async resolveRequest(id, config, schedules, decision) {
+      try {
+        await F.runTransaction(db, async tx => {
+          const r = await tx.get(ref('requests', id));
+          const current = await tx.get(ref('app', 'config'));
+          if (!r.exists() || r.data().status !== 'pending') throw new Error('Bu talep daha önce yanıtlandı.');
+          if ((current.data().updatedAt || 0) !== (config.updatedAt || 0)) throw new Error('Veriler değişti. Güncel taleple tekrar deneyin.');
+          for (const ym of Object.keys(schedules)) {
+            const currentSchedule = await tx.get(ref('schedules', ym));
+            if (!currentSchedule.exists() || (currentSchedule.data().updatedAt || 0) !== (schedules[ym].updatedAt || 0)) throw new Error('Çizelge değişti. Tekrar deneyin.');
+          }
+          tx.set(ref('app', 'config'), clean({ ...config, updatedAt: Date.now() }));
+          for (const ym of Object.keys(schedules)) tx.set(ref('schedules', ym), clean({ ...schedules[ym], updatedAt: Date.now(), updatedBy: me.displayName }));
+          tx.update(ref('requests', id), clean(decision));
+        });
+      } catch (e) { throw e.code ? friendly(e) : e; }
+    },
+    async updateRequest(id, f) {
+      try { await F.runTransaction(db, async tx => {
+        const r = await tx.get(ref('requests', id));
+        if (!r.exists() || r.data().status !== 'pending') throw new Error('Bu talep daha önce yanıtlandı.');
+        tx.update(ref('requests', id), clean(f));
+      }); } catch (e) { throw e.code ? friendly(e) : e; }
+    },
     async deleteRequest(id) { try { await F.deleteDoc(ref('requests', id)); } catch (e) { throw friendly(e); } }
   };
   return store;
@@ -280,13 +313,20 @@ function demoStore() {
       const f = () => {
         const m = meOf(sess()), admin = m && m.role !== 'user';
         const schedules = {}; Object.keys(db.schedules).forEach(k => { if (admin || db.schedules[k].status === 'final') schedules[k] = db.schedules[k]; });
-        const requests = (db.requests || []).filter(r => admin || (m && r.uid === m.uid)).sort((a, b) => b.createdAt - a.createdAt);
-        cb(clean({ config: db.config, schedules, requests }));
+        const requests = (db.requests || []).sort((a, b) => b.createdAt - a.createdAt);
+        cb(clean({ config: E.normalizeConfig(db.config), schedules, requests }));
       };
       listeners.add(f); setTimeout(f, 0);
       return () => listeners.delete(f);
     },
     async saveConfig(cfg) { db.config = clean(cfg); persist(); return wait(); },
+    async loadDocumentSettings() { return clean(db.documentSettings || {}); },
+    async loadDocumentDraft(key) { return clean(db.documentDrafts?.[key] || null); },
+    async saveDocumentDraft(key, draft, settings) {
+      db.documentDrafts ||= {};
+      db.documentDrafts[key] = clean({ ...draft, updatedAt: Date.now() });
+      db.documentSettings = clean(settings); persist(); return wait();
+    },
     async saveDayPlan(cfg, s) { db.config = clean(cfg); db.schedules[s.ym] = clean({ ...s, updatedAt: Date.now() }); persist(); return wait(); },
     async saveSchedule(s) { db.schedules[s.ym] = clean({ ...s, updatedAt: Date.now() }); persist(); return wait(); },
     async deleteSchedule(ym) { delete db.schedules[ym]; persist(); return wait(); },
@@ -319,7 +359,17 @@ function demoStore() {
       u.password = n; persist(); return wait();
     },
     async createRequest(r) { (db.requests = db.requests || []).push({ ...clean(r), id: 'r' + Date.now(), uid: sess(), status: 'pending', createdAt: Date.now() }); persist(); return wait(); },
-    async updateRequest(id, f) { Object.assign(db.requests.find(r => r.id === id), clean(f)); persist(); return wait(); },
+    async resolveRequest(id, config, schedules, decision) {
+      const r = db.requests.find(r => r.id === id);
+      if (!r || r.status !== 'pending') throw new Error('Bu talep daha önce yanıtlandı.');
+      db.config = clean(config); Object.assign(db.schedules, clean(schedules)); Object.assign(r, clean(decision));
+      persist(); return wait();
+    },
+    async updateRequest(id, f) {
+      const r = db.requests.find(r => r.id === id);
+      if (!r || r.status !== 'pending') throw new Error('Bu talep daha önce yanıtlandı.');
+      Object.assign(r, clean(f)); persist(); return wait();
+    },
     async deleteRequest(id) { db.requests = db.requests.filter(r => r.id !== id); persist(); return wait(); },
     resetDemo() { try { localStorage.removeItem(KEY); } catch (e) { /* yok say */ } setSess(null); db = null; }
   };

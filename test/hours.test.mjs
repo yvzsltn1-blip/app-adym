@@ -33,14 +33,14 @@ r = run('Tüm personel karışık, 4 günde bir', cfg => { Object.assign(cfg.pos
 check(!r.short.length && !r.errs.length, 'karışık düzende herkes 160 saati doldurmalı');
 
 r = run('Hedef kapalı (eski davranış)', cfg => { cfg.settings.monthlyHours = 0; Object.assign(cfg.posts[1], { assign: 'pool', poolIds: ['p_ismail', 'p_gulden', 'p_kutay'], every: 4, mode: 'daily' }); });
-check(!Object.keys(r.s.extra || {}).length, 'hedef kapalıyken ek gün açılmamalı');
+check(E.monthlyHoursOf(r.cfg) === 168 && !!Object.keys(r.s.extra || {}).length, 'eski kapalı hedef 168 saat olarak uygulanmalı');
 
 r = run('Gülden 7–11 Aralık yıllık izinde', cfg => {
   Object.assign(cfg.posts[1], { assign: 'pool', poolIds: ['p_ismail', 'p_gulden', 'p_kutay'], every: 4, mode: 'daily' });
   cfg.leaves = [{ id: 'l1', personId: 'p_gulden', type: 'yillik', from: '2026-12-07', to: '2026-12-11' }];
 });
 check(!r.errs.length, 'izinli ayda ihlal olmamalı');
-check(E.minShifts(r.cfg, E.person(r.cfg, 'p_gulden'), '2026-12') === 5, 'Gülden 5 iş günü izinde: hedef 120 saat → 5 nöbet');
+check(E.minShifts(r.cfg, E.person(r.cfg, 'p_gulden'), '2026-12') === 6, 'Gülden 5 iş günü izinde: hedef 128 saat → 6 nöbet');
 
 /* Görevler arasında fark yok: aynı sayıda nöbet tutan (izinsiz) herkesin ay farkı aynı olmalı;
    ör. Kutay 6 Enformasyon + 1 ek gün, diğerleri 5 + 2 tuttuysa hepsi aynı. */
@@ -71,13 +71,13 @@ check(E.minShifts(r.cfg, E.person(r.cfg, 'p_gulden'), '2026-12') === 5, 'Gülden
   sc['2026-12'].status = 'final';
   const row = E.monthHours(cfg, sc['2026-12'], '2026-12').find(r => r.person.id === 'p_zeynep');
   const L1 = E.overtimeLedger(cfg, sc, 'p_zeynep');
-  check(Math.abs(L1.earned - L0.earned - (row.hours - 160)) < 1e-9, 'kesinleşen ayın farkı bakiyeye eklenmeli');
+  check(Math.abs(L1.earned - L0.earned - (row.hours - 168)) < 1e-9, 'kesinleşen ayın farkı bakiyeye eklenmeli');
   /* 2027-01-04..05 (Pzt-Sal) = 2 iş günü → 16 saat */
   cfg.leaves = [{ id: 'm1', personId: 'p_zeynep', type: 'mesai', from: '2027-01-04', to: '2027-01-05' }];
   const L2 = E.overtimeLedger(cfg, sc, 'p_zeynep');
   check(L2.used === 16 && Math.abs(L2.balance - (L1.balance - 16)) < 1e-9, 'fazla mesai izni 2 iş günü = 16 saat düşmeli');
   /* Fazla mesai izni günleri o ayın hedefini de düşürür (izin mesaiden sayılır). */
-  check(Math.abs(E.hoursTarget(cfg, E.person(cfg, 'p_zeynep'), '2027-01') - 144) < 1e-9, 'izinli 2 iş günü: Ocak hedefi 144 saat');
+  check(Math.abs(E.hoursTarget(cfg, E.person(cfg, 'p_zeynep'), '2027-01') - 168) < 1e-9, 'eski fazla mesai kaydı yeni nöbet bırakma bilgisi olmadan hedefi azaltmamalı');
   console.log('\n== Fazla mesai: Zeynep biriken ' + L1.earned + ' sa, izin sonrası kalan ' + L2.balance + ' sa');
 }
 

@@ -10,6 +10,7 @@ ui-debug.log
 
 # Node
 node_modules/
+.qa/
 npm-debug.log*
 
 # İşletim sistemi / editör

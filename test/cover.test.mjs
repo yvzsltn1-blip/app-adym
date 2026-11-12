@@ -1,6 +1,8 @@
 import * as E from '../public/js/engine.js';
 import assert from 'node:assert/strict';
 const cfg = E.defaultConfig();
+// Bu senaryo sabit kişinin eski 24/72 döngüsünde izinle çıkarılmasını denetler.
+Object.assign(cfg.posts[1], { assign: 'fixed', fixedId: 'p_ismail', mode: 'cycle', every: 4 });
 const schedules = { '2026-11': E.sampleNovember() };
 schedules['2026-12'] = E.generate(cfg, schedules, '2026-12', { seed: 7 });
 const orig = JSON.stringify(schedules['2026-12']);
@@ -21,6 +23,6 @@ assert.equal(after['2026-12'].status, schedules['2026-12'].status);
 cfg.leaves.push({ id: 'l2', personId: 'p_ismail', type: 'yillik', from: '2026-12-01', to: '2026-12-10' });
 const r2 = E.coverLeave(cfg, after, 'p_ismail', '2026-12-01', '2026-12-10');
 assert.ok(r2.changes.length && r2.changes.every(c => c.postId === 'ek' && !c.after.length));
-assert.equal(E.postLabel(cfg.posts[1]), '');
-assert.equal(E.postLabel(cfg.posts[0]), 'Enformasyon');
+assert.equal(E.postLabel(cfg.posts[1]), '2. Nöbetçi');
+assert.equal(E.postLabel(cfg.posts[0]), '1. Nöbetçi');
 console.log('tamam');

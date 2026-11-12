@@ -39,6 +39,9 @@ service cloud.firestore {
       allow list: if isSuper();
       allow get, write: if isSuper() || (isAdmin() && targetIsUser(uid));
     }
+    match /documentDrafts/{draftId} {
+      allow read, write: if isAdmin();
+    }
     match /app/{docId} {
       allow read: if isAdmin() || isMember();
       allow write: if isAdmin();
@@ -49,10 +52,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
     match /requests/{id} {
-      allow read: if isAdmin() || (isMember() && resource.data.uid == request.auth.uid);
+      allow read: if isAdmin() || isMember();
       allow create: if isMember()
         && request.resource.data.uid == request.auth.uid
-        && request.resource.data.status == 'pending';
+        && request.resource.data.status == 'pending'
+        && request.resource.data.personId == me().personId
+        && request.resource.data.from is string && request.resource.data.to is string
+        && request.resource.data.from <= request.resource.data.to
+        && request.resource.data.keys().hasOnly(['uid', 'status', 'personId', 'requester', 'type', 'from', 'to', 'note', 'createdAt']);
       allow update: if isAdmin();
       // Personel bekleyen talebini geri çekebilir.
       allow delete: if isAdmin() || (isMember() && resource.data.uid == request.auth.uid && resource.data.status == 'pending');

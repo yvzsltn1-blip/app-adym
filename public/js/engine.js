@@ -67,7 +67,16 @@ export function dayCat(cfg, date) {
 export function leaveOn(cfg, pid, date) {
   return (cfg.leaves || []).find(l => l.personId === pid && l.from <= date && date <= l.to) || null;
 }
-export function leaveType(cfg, id) { return (cfg.leaveTypes || []).find(t => t.id === id) || { id, name: 'İzin', compensate: true }; }
+export function leaveType(cfg, id) { return (cfg.leaveTypes || []).find(t => t.id === id) || (cfg.archivedLeaveTypes || []).find(t => t.id === id) || { id, name: 'İzin', compensate: true }; }
+export function setLeaveTypes(cfg, types) {
+  const active = new Set(types.map(t => t.id));
+  const archive = new Map((cfg.archivedLeaveTypes || []).map(t => [t.id, t]));
+  for (const t of cfg.leaveTypes || []) if (!active.has(t.id)) archive.set(t.id, t);
+  for (const id of active) archive.delete(id);
+  cfg.leaveTypes = types;
+  cfg.archivedLeaveTypes = [...archive.values()];
+  cfg.leaveTypesVersion = 1;
+}
 export function person(cfg, id) { return (cfg.people || []).find(p => p.id === id) || null; }
 export function post(cfg, id) { return (cfg.posts || []).find(p => p.id === id) || null; }
 /* Görevi kimler tutar? post.assign:
@@ -80,7 +89,7 @@ export function postPeople(cfg, postId) {
   const pst = post(cfg, postId);
   if (!pst) return [];
   /* Sabit döngü görevindeki kişi (ör. sabit 2. nöbetçi) diğer görevlerin dağıtımına girmez; 24/72 döngüsü zaten o görevle dolar. */
-  const fixedElsewhere = isCyclePost(pst) ? [] : (cfg.posts || []).filter(x => x.id !== pst.id && isActivePost(x) && x.assign === 'fixed' && x.fixedId).map(x => x.fixedId);
+  const fixedElsewhere = (pst.assign === 'fixed' || isCyclePost(pst)) ? [] : (cfg.posts || []).filter(x => x.id !== pst.id && isActivePost(x) && x.assign === 'fixed' && x.fixedId).map(x => x.fixedId);
   const all = (cfg.people || []).filter(p => !fixedElsewhere.includes(p.id));
   switch (pst.assign) {
     case 'off': return [];
@@ -92,9 +101,11 @@ export function postPeople(cfg, postId) {
 }
 export const isActivePost = pst => !!pst && pst.assign !== 'off' && pst.mode !== 'off';
 /* Döngü: sabit kişi kendi 24/72 döngüsünde (eski 'cycle' kayıtları da). */
-export const isCyclePost = pst => !!pst && (pst.assign === 'fixed' || (!pst.assign && pst.mode === 'cycle'));
+export const isOnDemandPost = pst => !!pst && pst.every === 'need';
+export const isCyclePost = pst => !!pst && !isOnDemandPost(pst) && (pst.assign === 'fixed' || (!pst.assign && pst.mode === 'cycle'));
 /* "Her N günde bir" görevlerde o gün nöbet gerekiyor mu? Sayım sabit bir başlangıç gününe göre yapılır, aylar arasında kaymaz. */
 export function needOn(pst, date) {
+  if (isOnDemandPost(pst)) return false;
   const every = Math.max(1, +pst.every || 1);
   if (every === 1) return true;
   const i = diffDays(pst.anchor || '2026-11-01', date);
@@ -140,8 +151,7 @@ export const shareOf = p => (p && p.share != null && p.share !== '' ? Math.max(0
    İzinli iş günleri (görevlendirme dahil) mesaiden sayılır: gün başına hedef/20 saat düşer.
    Ay içinde başlayan / ayrılan personelde hedef çalıştığı gün oranında azalır; nöbet payı (%) da uygulanır. */
 export function monthlyHoursOf(cfg) {
-  const v = cfg && cfg.settings && cfg.settings.monthlyHours;
-  return v == null || v === '' ? 160 : Math.max(0, +v || 0);
+  return 168;
 }
 export function hoursTarget(cfg, p, ym, evenInactive) {
   const H = monthlyHoursOf(cfg);
@@ -152,9 +162,11 @@ export function hoursTarget(cfg, p, ym, evenInactive) {
     const date = dateOf(ym, d);
     if ((p.startDate && date < p.startDate) || (p.endDate && date > p.endDate)) continue;
     inDays++;
-    if (leaveOn(cfg, p.id, date) && isWorkday(cfg, date)) leaveWd++;
+    const leave = leaveOn(cfg, p.id, date);
+    if (leave && !leaveType(cfg, leave.type).unavailable && !leaveType(cfg, leave.type).overtime && isWorkday(cfg, date)) leaveWd++;
   }
-  return Math.max(0, H * shareOf(p) * inDays / D - leaveWd * H / 20);
+  const released = (cfg.leaves || []).filter(l => l.personId === p.id && leaveType(cfg, l.type).overtime).reduce((n, l) => n + (l.releasedDates || []).filter(dt => dt.slice(0, 7) === ym).length, 0);
+  return Math.max(0, H * inDays / D - leaveWd * 8 - released * (+cfg.settings.shiftHours || 24));
 }
 /* Hedefi doldurmak için gereken en az nöbet sayısı (24 saatlik nöbetle 160 saat → 7). */
 export function minShifts(cfg, p, ym) {
@@ -196,11 +208,12 @@ export function overtimeLedger(cfg, schedules, pid) {
     const target = hoursTarget(cfg, p, m, true);
     return { ym: m, shifts: n, hours: n * sh, target, diff: n * sh - target };
   }).filter(r => r.shifts || r.target);
-  const earned = months.reduce((a, r) => a + r.diff, 0);
+  const manual = (cfg.overtimeAdjustments || []).filter(a => a.personId === pid);
+  const earned = months.reduce((a, r) => a + r.diff, 0) + manual.reduce((n, a) => n + (+a.hours || 0), 0);
   const uses = (cfg.leaves || []).filter(l => l.personId === pid && leaveType(cfg, l.type).overtime && l.from.slice(0, 7) >= start)
-    .map(l => ({ leave: l, days: leaveWorkdays(cfg, l, l.from, l.to), hours: leaveWorkdays(cfg, l, l.from, l.to) * H / 20 }));
+    .map(l => ({ leave: l, days: (l.releasedDates || []).length, hours: l.debitHours != null ? +l.debitHours : leaveWorkdays(cfg, l, l.from, l.to) * 8 }));
   const used = uses.reduce((a, u) => a + u.hours, 0);
-  return { months, earned, uses, used, balance: earned - used, dayHours: H / 20 };
+  return { months, earned, uses, used, balance: earned - used, manual, dayHours: sh };
 }
 
 /* Hak hesabında kişi o gün "beklenen" mi? Telafi gerektiren izinde beklenmeye devam eder. */
@@ -294,7 +307,7 @@ export function monthPostStats(cfg, sched, ym, pst) {
       const b = blockOn(cfg, p, date);
       if (b && b.kind === 'leave') rows[p.id].leaveDays++;
     });
-    if (isCyclePost(pst) || !isActivePost(pst) || (!needOn(pst, date) && !extra.has(d)) || !exp.length) continue;
+    if (isCyclePost(pst) || !isActivePost(pst) || (!needOn(pst, date) && !extra.has(d) && !(isOnDemandPost(pst) && dayList(sched, pst.id, d).length)) || !exp.length) continue;
     /* Her günün nöbeti, o gün beklenenler arasında kişisel pay oranına göre bölünür (varsayılan %100). */
     const tw = exp.reduce((a, p) => a + shareOf(p), 0);
     if (!tw) continue;
@@ -538,7 +551,7 @@ function fillDaily(cfg, schedules, sched, ym, posts, busy, prevBal, opts) {
      normal günleri dışında "ek gün" yeri açılır (-3 = boş bırakılabilir). */
   const hoursOn = monthlyHoursOf(cfg) > 0;
   const minS = people.map(p => (hoursOn ? minShifts(cfg, p, ym) : 0));
-  const optPost = posts.map(pst => hoursOn && Math.max(1, +pst.every || 1) > 1);
+  const optPost = posts.map(pst => hoursOn && (isOnDemandPost(pst) || Math.max(1, +pst.every || 1) > 1));
 
   /* Yerler: gün sırasıyla, her gün için görevlerin kişi yerleri. */
   const sPost = [], sDay = [], slotV = [], fixedA = [], elig = [], optA = [];
@@ -551,7 +564,7 @@ function fillDaily(cfg, schedules, sched, ym, posts, busy, prevBal, opts) {
       if (!needed && (optPost[j] || isPinned(sched, pst.id, d))) {
         const pinIds = isPinned(sched, pst.id, d) ? dayList(sched, pst.id, d).filter(id => idx[id] != null) : [];
         if (pinIds.length) pinIds.forEach(id => { sPost.push(j); sDay.push(d); elig.push([]); slotV.push(idx[id]); fixedA.push(1); optA.push(1); });
-        else if (optPost[j]) { sPost.push(j); sDay.push(d); elig.push(avail); slotV.push(-3); fixedA.push(0); optA.push(1); }
+        else if (optPost[j]) for (let k = 0; k < req; k++) { sPost.push(j); sDay.push(d); elig.push(avail); slotV.push(-3); fixedA.push(0); optA.push(1); }
         return;
       }
       const pinned = needed && isPinned(sched, pst.id, d), pinIds = pinned ? dayList(sched, pst.id, d) : [];
@@ -570,6 +583,8 @@ function fillDaily(cfg, schedules, sched, ym, posts, busy, prevBal, opts) {
   const pinMine = people.map(() => new Set());
   for (let s = 0; s < S; s++) if (fixed[s] && slot[s] >= 0) pinMine[slot[s]].add(sDay[s]);
   const otherCnt = people.map((p, i) => (busy[p.id] ? [...busy[p.id]].filter(d => d >= 0 && d < D && !pinMine[i].has(d)).length : 0));
+  // Geçmiş saat bakiyesi hedefi değiştirmez; tüm görevler birlikte 168 saati tamamlar.
+  people.forEach((p, i) => { needT[i] = Math.max(0, hoursTarget(cfg, p, ym) / (+cfg.settings.shiftHours || 24) - otherCnt[i]); });
 
   /* Ek kurallar */
   const SET = cfg.settings || {};
@@ -749,6 +764,8 @@ function fillDaily(cfg, schedules, sched, ym, posts, busy, prevBal, opts) {
 
 /* Ayın çizelgesini oluşturur. Sabitlenmiş hücreler korunur; önce döngü görevleri yerleşir. */
 export function generate(cfg, schedules, ym, opts = {}) {
+  if (pendingRequests(opts.requests || [], ym).length) throw new Error('Bu ay için yanıtlanmamış talepler var. Önce tüm talepleri onaylayın veya reddedin.');
+  cfg = { ...cfg, settings: { ...cfg.settings, monthlyHours: 168 } };
   const old = schedules[ym];
   const sched = { ym, status: 'draft', assign: {}, pins: {} };
   if (old && opts.keepPins !== false) {
@@ -792,13 +809,13 @@ export function candidates(cfg, schedules, ym, postId, d) {
 export function explain(cfg, schedules, ym) {
   const sched = schedules[ym], D = daysIn(ym), cyc = cycleDays(cfg), out = [];
   if (!sched) return out;
-  const groups = monthSummaryAll(cfg, schedules, ym).filter(g => !isCyclePost(g.post));
+  const groups = [{ rows: monthHours(cfg, sched, ym).map(r => ({ person: r.person, count: r.shifts, target: r.target / (+cfg.settings.shiftHours || 24) })) }];
   for (const g of groups) {
     const slots = g.rows.reduce((a, r) => a + r.count, 0);
     const totalTarget = g.rows.reduce((a, r) => a + r.target, 0);
     out.push({ title: 'Genel durum', details: [
       'Bu ay tüm görevlerde toplam **' + slots + ' nöbet** yazılmış (görevler arasında fark gözetilmez, her nöbet aynı sayılır).',
-      'Hedefler toplamı ' + Math.round(totalTarget * 10) / 10 + '. Hedefler devirli bakiyeyi telafi etmeye çalıştığı için tek ayda tam tutmayabilir; kalan fark sonraki aya devreder.',
+      'Hedefler toplamı ' + Math.round(totalTarget * 10) / 10 + ' nöbet. Herkesin aylık hedefi 168 saattir; izinler hedefe sayılır. Birikmiş saat bakiyesi yeni ayın hedefini değiştirmez.',
       '24/' + (cyc * 24 - 24) + ' düzeninde bir kişi en erken ' + cyc + ' günde bir nöbet tutabilir, yani bu ay en fazla **' + Math.ceil(D / cyc) + ' nöbet**.'
     ] });
     for (const r of g.rows) {
@@ -814,12 +831,12 @@ export function explain(cfg, schedules, ym) {
       const prev = shiftDates(cfg, schedules, p.id, addDays(dateOf(ym, 0), -cyc), addDays(dateOf(ym, 0), -1));
       let next = prev.length ? diffDays(dateOf(ym, 0), addDays(prev[prev.length - 1], cyc)) : 0, cap = 0;
       for (let d = Math.max(0, next); d < D;) { if (!blockOn(cfg, p, dateOf(ym, d))) { cap++; d += cyc; } else d++; }
-      const det = ['Hedef **' + Math.round(r.target * 10) / 10 + '**, yazılan **' + r.count + '** (' + (diff > 0 ? '+' : '') + Math.round(diff * 10) / 10 + '). Devreden bakiye ' + (r.prevBal > 0 ? '+' : '') + Math.round(r.prevBal * 10) / 10 + '.'];
+      const det = ['Hedef **' + Math.round(r.target * 10) / 10 + '** nöbet, yazılan **' + r.count + '** nöbet.'];
       Object.keys(why).forEach(k => det.push(why[k] + ' gün: ' + k + '.'));
       det.push('Uygun ' + avail + ' günde 24/72 ile en fazla **' + cap + ' nöbet** sığıyor.');
-      if (diff < 0 && cap <= r.count) det.push('Bu ay daha fazlası mümkün değil; eksik kısım bakiyesine yazılır ve sonraki aylarda tamamlanır.');
-      else if (diff < 0) det.push('Diğer kişilerin dinlenme süreleri ve hafta sonu dengesi nedeniyle daha fazla gün ayrılamadı. Eksik kısım sonraki aya devreder.');
-      else det.push('Başkalarının tutamadığı günler (izin, dinlenme) ona kaldı. Fazlası bakiyesine yazılır; sonraki aylarda daha az nöbet alır.');
+      if (diff < 0 && cap <= r.count) det.push('Gün kısıtları ve dinlenme süreleri nedeniyle bu ay daha fazla nöbet sığmıyor.');
+      else if (diff < 0) det.push('Görev kadrosu, diğer kişilerin dinlenme süreleri veya hafta sonu kuralları nedeniyle hedef tamamlanamadı. Kadroyu ve gün kısıtlarını kontrol edin.');
+      else det.push('Günlük görevleri doldurmak için hedefin üstünde nöbet gerekti. Fazla saatler kesinleştirmeden sonra bakiyeye eklenir.');
       out.push({ title: fullName(p), details: det });
     }
   }
@@ -881,16 +898,40 @@ export function defaultHolidays(years) {
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
+// Eski kayıtlar ve yedekler yeni görev adlarıyla açılır; atama kimlikleri korunur.
+export function normalizeConfig(config) {
+  const cfg = JSON.parse(JSON.stringify(config));
+  cfg.settings = { ...cfg.settings, monthlyHours: 168 };
+  cfg.leaveTypes = cfg.leaveTypes || [];
+  if (!cfg.leaveTypesVersion && !cfg.leaveTypes.some(t => t.id === 'uygun-degil')) cfg.leaveTypes.unshift({ id: 'uygun-degil', name: 'Bu günlerde çalışamam', unavailable: true, compensate: false, color: '#687ca5' });
+  cfg.leaveTypesVersion = 1;
+  for (const p of cfg.posts || []) {
+    if (p.id === 'ek' && !p.frequencyVersion) {
+      p.every = 'need';
+      p.frequencyVersion = 1;
+    }
+    if (p.name === 'Enformasyon Memuru') {
+      p.name = '1. Nöbetçi';
+      p.short = '1. Nöbetçi';
+    }
+  }
+  if (cfg.settings) {
+    if (cfg.settings.org === 'TRABZON İL AFET VE ACİL DURUM MÜDÜRLÜĞÜ AFETLERE MÜDAHALE ŞUBE MÜDÜRLÜĞÜ') cfg.settings.org = 'TRABZON İL AFET VE ACİL DURUM MÜDÜRLÜĞÜ HUKUK BİRİMİ';
+    if (cfg.settings.title === 'ENFORMASYON MEMURU NÖBET ÇİZELGESİ') cfg.settings.title = 'NÖBET ÇİZELGESİ';
+  }
+  return cfg;
+}
+
 export function defaultConfig() {
   const posts = [
-    { id: 'enf', name: 'Enformasyon Memuru', short: 'Enformasyon', mode: 'daily', assign: 'people', required: 1, every: 1 },
-    { id: 'ek', name: '2. Nöbetçi', short: '2. Nöbetçi', mode: 'cycle', assign: 'fixed', fixedId: 'p_ismail', required: 1, every: 4, poolIds: [] }
+    { id: 'enf', name: '1. Nöbetçi', short: '1. Nöbetçi', mode: 'daily', assign: 'people', required: 1, every: 1 },
+    { id: 'ek', name: '2. Nöbetçi', short: '2. Nöbetçi', mode: 'daily', assign: 'fixed', fixedId: 'p_ismail', required: 1, every: 'need', frequencyVersion: 1, poolIds: [] }
   ];
   const P = (id, name, surname, code, pst) => ({ id, name, surname, code, posts: [pst], active: true, offWeekdays: [], annualLeave: 20, startDate: '', endDate: '', phone: '', note: '' });
   return {
     settings: {
-      org: 'TRABZON İL AFET VE ACİL DURUM MÜDÜRLÜĞÜ AFETLERE MÜDAHALE ŞUBE MÜDÜRLÜĞÜ',
-      title: 'ENFORMASYON MEMURU NÖBET ÇİZELGESİ',
+      org: 'TRABZON İL AFET VE ACİL DURUM MÜDÜRLÜĞÜ HUKUK BİRİMİ',
+      title: 'NÖBET ÇİZELGESİ',
       shiftHours: 24, restHours: 72, startMonth: '2026-11', signers: []
     },
     posts,
@@ -903,6 +944,7 @@ export function defaultConfig() {
       P('p_ismail', 'İsmail', 'ŞİRİN', 'S-2758', 'ek')
     ],
     leaveTypes: [
+      { id: 'uygun-degil', name: 'Bu günlerde çalışamam', unavailable: true, compensate: false, color: '#687ca5' },
       { id: 'yillik', name: 'Yıllık izin', compensate: true, annual: true, color: '#2f6fd6' },
       { id: 'rapor', name: 'Sağlık raporu', compensate: true, color: '#d23a2e' },
       { id: 'mazeret', name: 'Mazeret izni', compensate: true, color: '#b06a00' },
@@ -1080,5 +1122,18 @@ export function coverLeave(cfg, schedules, pid, from, to, opts = {}) {
   return { schedules: out, changes, empty };
 }
 
-/* Görevin kişi adının yanında gösterilecek etiketi. Sabit tek kişilik görevlerde (ör. İsmail ŞİRİN) etiket yazılmaz. */
-export function postLabel(pst) { return !pst || pst.assign === 'fixed' ? '' : (pst.short || pst.name); }
+/* Nöbet sırası, sabit kişiye verilmiş görevlerde de görünür. */
+export function postLabel(pst) { return pst ? (pst.short || pst.name) : ''; }
+
+// Talepler çizelge kayıtlarından bağımsızdır; yeniden oluşturma bunlara dokunmaz.
+export function pendingRequests(requests, ym) {
+  return requests.filter(r => r.status === 'pending' && r.from <= dateOf(ym, daysIn(ym) - 1) && r.to >= dateOf(ym, 0));
+}
+export function overtimeRelease(cfg, schedules, leave) {
+  const dates = [];
+  for (let dt = leave.from; dt <= leave.to; dt = addDays(dt, 1)) {
+    const s = schedules[dt.slice(0, 7)], d = +dt.slice(8) - 1;
+    if (s && (cfg.posts || []).some(p => dayList(s, p.id, d).includes(leave.personId))) dates.push(dt);
+  }
+  return { releasedDates: dates, debitHours: dates.length * (+cfg.settings.shiftHours || 24) };
+}

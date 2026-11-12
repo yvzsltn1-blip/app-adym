@@ -6,7 +6,7 @@ import * as E from './engine.js';
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
 const crc32 = b => { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
 
-function zip(files) {
+export function zip(files, type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
   const enc = new TextEncoder(), parts = [], central = []; let offset = 0;
   files.forEach(f => {
     const name = enc.encode(f.name), data = enc.encode(f.text), crc = crc32(data);
@@ -22,7 +22,7 @@ function zip(files) {
   });
   const cdSize = central.reduce((a, b) => a + b.length, 0), end = new DataView(new ArrayBuffer(22));
   end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
-  return new Blob(parts.concat(central, [new Uint8Array(end.buffer)]), { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  return new Blob(parts.concat(central, [new Uint8Array(end.buffer)]), { type });
 }
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const col = n => { let s = ''; for (n++; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s; return s; };
@@ -81,10 +81,10 @@ export function buildXlsx(cfg, schedules, ym) {
   E.monthSummary(cfg, schedules, ym).forEach(g => {
     if (!g.rows.length) return;
     sr.push('<row r="' + q + '">' + cs('A' + q, g.post.name, 5) + '</row>'); q++;
-    const heads = E.isCyclePost(g.post) ? ['Personel', 'Nöbet', 'İzin günü'] : ['Personel', 'Devir', 'Hak', 'Hedef', 'Tuttu', 'Yeni bakiye'].concat(E.CATS.map(c => c.label), ['İzin günü']);
+    const heads = E.isCyclePost(g.post) ? ['Personel', 'Nöbet'] : ['Personel', 'Devir', 'Hak', 'Hedef', 'Tuttu', 'Yeni bakiye'].concat(E.CATS.map(c => c.label));
     sr.push('<row r="' + q + '" ht="28" customHeight="1">' + heads.map((h, i) => cs(col(i) + q, h, 5)).join('') + '</row>'); q++;
-    g.rows.forEach(x => {
-      const vals = E.isCyclePost(g.post) ? [x.count, x.leaveDays] : [x.prevBal, x.fair, x.target, x.count, x.newBal].map(v => Math.round(v * 10) / 10).concat(E.CATS.map(c => x.cats[c.key]), [x.leaveDays]);
+    g.rows.filter(x => x.count > 0).forEach(x => {
+      const vals = E.isCyclePost(g.post) ? [x.count] : [x.prevBal, x.fair, x.target, x.count, x.newBal].map(v => Math.round(v * 10) / 10).concat(E.CATS.map(c => x.cats[c.key]));
       sr.push('<row r="' + q + '">' + cs('A' + q, E.fullName(x.person), 7) + vals.map((v, i) => cn(col(i + 1) + q, v, 6)).join('') + '</row>'); q++;
     });
     q++;
